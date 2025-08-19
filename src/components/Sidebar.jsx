@@ -132,7 +132,7 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      {/* Logout Button */}
+      {/* Logout Butto */}
       <div className="p-4 relative z-10">
         <button
           onClick={handleLogout}
