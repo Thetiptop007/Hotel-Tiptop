@@ -6,6 +6,7 @@ export default function AddBooking() {
   const [isChecking, setIsChecking] = useState(false);
   const [customerHistory, setCustomerHistory] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [formData, setFormData] = useState({
@@ -246,7 +247,7 @@ export default function AddBooking() {
   }, []);
 
   const handleCheckCustomer = useCallback(async () => {
-    if (!formData.mobile && !formData.aadhaar) {
+    if (!formData.customerMobile && !formData.customerAadhaar) {
       setError('Please enter either mobile number or Aadhaar number to check customer history');
       return;
     }
@@ -255,11 +256,10 @@ export default function AddBooking() {
     setError("");
 
     try {
-      const searchParams = {};
-      if (formData.mobile) searchParams.mobile = formData.mobile;
-      if (formData.aadhaar) searchParams.aadhaar = formData.aadhaar;
-
-      const response = await customerAPI.searchCustomer(searchParams);
+      const response = await bookingAPI.searchCustomer(
+        formData.customerMobile,
+        formData.customerAadhaar
+      );
 
       if (response.success && response.data.found) {
         setCustomerHistory(response.data.customer);
@@ -268,9 +268,9 @@ export default function AddBooking() {
         // Auto-fill form with existing customer data
         setFormData(prev => ({
           ...prev,
-          name: response.data.customer.name,
-          aadhaar: response.data.customer.aadhaar,
-          mobile: response.data.customer.mobile
+          customerName: response.data.customer.name,
+          customerAadhaar: response.data.customer.aadhaar,
+          customerMobile: response.data.customer.mobile
         }));
 
         if (response.data.archived) {
@@ -288,7 +288,43 @@ export default function AddBooking() {
     } finally {
       setIsChecking(false);
     }
-  }, [formData.mobile, formData.aadhaar]);
+  }, [formData.customerMobile, formData.customerAadhaar]);
+
+  // New function specifically for checking history by Aadhaar
+  const handleCheckCustomerHistory = useCallback(async () => {
+    if (!formData.customerAadhaar || formData.customerAadhaar.length < 14) {
+      setError('Please enter a valid Aadhaar number to check customer history');
+      return;
+    }
+
+    setIsChecking(true);
+    setError("");
+    setSuccessMessage("");
+
+    try {
+      const response = await bookingAPI.searchCustomer(null, formData.customerAadhaar);
+
+      if (response.success && response.data.found) {
+        setCustomerHistory(response.data.customer);
+        setShowHistoryModal(true);
+
+        // Auto-fill form with existing customer data
+        setFormData(prev => ({
+          ...prev,
+          customerName: response.data.customer.name,
+          customerMobile: response.data.customer.mobile
+        }));
+      } else {
+        setCustomerHistory(null);
+        setSuccessMessage('Customer not found. This appears to be a new customer.');
+      }
+    } catch (error) {
+      setError(error.message || 'Failed to search customer. Please try again.');
+      setCustomerHistory(null);
+    } finally {
+      setIsChecking(false);
+    }
+  }, [formData.customerAadhaar]);
 
   // Memoized form validation for better performance
   const isFormValid = useMemo(() => {
@@ -522,26 +558,51 @@ export default function AddBooking() {
               </div>
             </div>
 
-            {/* Row 3 - Aadhaar Number */}
+            {/* Row 3 - Aadhaar Number with Check History Button */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">
                 Aadhaar Number
               </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  name="customerAadhaar"
-                  value={formData.customerAadhaar}
-                  onChange={handleInputChange}
-                  placeholder="XXXX-XXXX-XXXX"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
-                  required
-                />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-4">
-                  <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
-                  </svg>
+              <div className="flex gap-3">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    name="customerAadhaar"
+                    value={formData.customerAadhaar}
+                    onChange={handleInputChange}
+                    placeholder="XXXX-XXXX-XXXX"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                    required
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-4">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+                    </svg>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleCheckCustomerHistory}
+                  disabled={isChecking || !formData.customerAadhaar || formData.customerAadhaar.length < 14}
+                  className="px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-4 focus:ring-green-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap text-sm"
+                >
+                  {isChecking ? (
+                    <div className="flex items-center">
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Checking
+                    </div>
+                  ) : (
+                    <div className="flex items-center">
+                      <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                      </svg>
+                      Check History
+                    </div>
+                  )}
+                </button>
               </div>
             </div>
 
@@ -576,33 +637,6 @@ export default function AddBooking() {
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                 />
               </div>
-            </div>
-
-            {/* Check Customer Button */}
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={handleCheckCustomer}
-                disabled={isChecking}
-                className="bg-gradient-to-r from-green-500 to-green-600 text-white py-3 px-8 rounded-xl font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-4 focus:ring-green-500/30 transition-all duration-300 transform hover:scale-105 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
-              >
-                {isChecking ? (
-                  <div className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Checking...
-                  </div>
-                ) : (
-                  <div className="flex items-center">
-                    <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-                    </svg>
-                    Check Customer History
-                  </div>
-                )}
-              </button>
             </div>
 
             {/* Submit Button */}
@@ -641,6 +675,7 @@ export default function AddBooking() {
                   setError("");
                   setSuccessMessage("");
                   setShowHistory(false);
+                  setShowHistoryModal(false);
                   setCustomerHistory(null);
                 }}
               >
@@ -650,6 +685,135 @@ export default function AddBooking() {
           </form>
         </div>
       </div>
+
+      {/* Customer History Modal */}
+      {showHistoryModal && customerHistory && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white/90 backdrop-blur-lg rounded-2xl p-6 shadow-2xl border border-white/30 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                Customer History
+              </h3>
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors duration-200 p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Customer Summary */}
+            <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-2xl p-6 border border-green-200 mb-6">
+              <div className="flex items-center mb-4">
+                <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center text-white font-bold text-xl mr-4">
+                  {customerHistory.name ? customerHistory.name.charAt(0).toUpperCase() : 'C'}
+                </div>
+                <div>
+                  <h4 className="text-xl font-bold text-gray-800">{customerHistory.name}</h4>
+                  <p className="text-gray-600">Mobile: {customerHistory.mobile}</p>
+                  <p className="text-gray-600">Aadhaar: {customerHistory.aadhaar}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-blue-600">{customerHistory.totalBookings || 0}</p>
+                  <p className="text-sm text-gray-600">Total Visits</p>
+                </div>
+                <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-green-600">₹{customerHistory.totalSpent || 0}</p>
+                  <p className="text-sm text-gray-600">Total Spent</p>
+                </div>
+                <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4 text-center">
+                  <p className="text-lg font-bold text-purple-600">
+                    {customerHistory.lastVisit
+                      ? new Date(customerHistory.lastVisit).toLocaleDateString('en-IN', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      })
+                      : 'N/A'
+                    }
+                  </p>
+                  <p className="text-sm text-gray-600">Last Visit</p>
+                </div>
+                <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4 text-center">
+                  <p className="text-lg font-bold text-orange-600">
+                    {customerHistory.totalBookings > 5 ? 'VIP' : customerHistory.totalBookings > 2 ? 'Regular' : 'New'}
+                  </p>
+                  <p className="text-sm text-gray-600">Status</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Booking History */}
+            {customerHistory.bookings && customerHistory.bookings.length > 0 ? (
+              <div>
+                <h4 className="text-lg font-bold text-gray-800 mb-4">Previous Bookings:</h4>
+                <div className="space-y-4 max-h-96 overflow-y-auto">
+                  {customerHistory.bookings.map((booking, index) => (
+                    <div key={booking._id || index} className="bg-white/60 backdrop-blur-sm rounded-xl p-5 border border-white/50 hover:bg-white/80 transition-all duration-300">
+                      <div className="grid grid-cols-1 md:grid-cols-6 gap-4 text-sm">
+                        <div>
+                          <p className="font-medium text-gray-700">Booking ID</p>
+                          <p className="text-blue-600 font-semibold">{booking.serialNo || booking.entryNo || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-700">Check-in</p>
+                          <p className="text-gray-600">{booking.checkIn ? new Date(booking.checkIn).toLocaleDateString() : 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-700">Check-out</p>
+                          <p className="text-gray-600">{booking.checkOut ? new Date(booking.checkOut).toLocaleDateString() : 'Active'}</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-700">Room</p>
+                          <p className="text-gray-600">{booking.room || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-700">Rent</p>
+                          <p className="text-green-600 font-semibold">₹{booking.rent || 0}</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-700">Status</p>
+                          <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${booking.status === 'checked-out'
+                            ? 'bg-green-100 text-green-800'
+                            : booking.status === 'checked-in'
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-gray-100 text-gray-800'
+                            }`}>
+                            {booking.status || 'Unknown'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-gray-600 text-lg">No booking history found</p>
+                <p className="text-gray-500 text-sm">This customer hasn't made any bookings yet.</p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex justify-center mt-6 pt-4 border-t border-gray-200">
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-8 py-3 rounded-xl font-medium hover:from-blue-600 hover:to-purple-600 transition-all duration-300"
+              >
+                Continue with Booking
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         .animation-delay-2000 {

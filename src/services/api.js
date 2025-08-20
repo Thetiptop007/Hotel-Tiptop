@@ -128,68 +128,6 @@ class ApiService {
         });
     }
 
-    // Customer API calls
-    async getCustomers(params = {}) {
-        const queryString = new URLSearchParams(params).toString();
-        const endpoint = queryString ? `/customers?${queryString}` : '/customers';
-
-        console.log("ApiService - getCustomers called:", {
-            endpoint,
-            params,
-            hasToken: !!this.getAuthToken(),
-            authHeaders: this.getAuthHeaders()
-        });
-
-        return await this.apiCall(endpoint);
-    }
-
-    async createCustomer(customerData) {
-        return await this.apiCall('/customers', {
-            method: 'POST',
-            body: customerData,
-        });
-    }
-
-    async getCustomer(id) {
-        return await this.apiCall(`/customers/${id}`);
-    }
-
-    async updateCustomer(id, customerData) {
-        return await this.apiCall(`/customers/${id}`, {
-            method: 'PUT',
-            body: customerData,
-        });
-    }
-
-    async deleteCustomer(id) {
-        return await this.apiCall(`/customers/${id}`, {
-            method: 'DELETE',
-        });
-    }
-
-    async searchCustomer(params) {
-        const queryString = new URLSearchParams(params).toString();
-        return await this.apiCall(`/customers/search?${queryString}`);
-    }
-
-    async getCustomerHistory(id) {
-        return await this.apiCall(`/customers/${id}/history`);
-    }
-
-    async uploadAadhaarImage(id, imageFile) {
-        const formData = new FormData();
-        formData.append('aadhaarImage', imageFile);
-
-        return await this.apiCall(`/customers/${id}/aadhaar-image`, {
-            method: 'POST',
-            headers: {
-                // Remove Content-Type header to let browser set it with boundary
-                ...this.getAuthHeaders(),
-            },
-            body: formData,
-        });
-    }
-
     // Booking API calls
     async getBookings(params = {}) {
         const queryString = new URLSearchParams(params).toString();
@@ -259,10 +197,6 @@ class ApiService {
         const queryString = new URLSearchParams(params).toString();
         const endpoint = queryString ? `/analytics/revenue?${queryString}` : '/analytics/revenue';
         return await this.apiCall(endpoint);
-    }
-
-    async getCustomerAnalytics() {
-        return await this.apiCall('/analytics/customers');
     }
 
     async getOccupancyAnalytics() {

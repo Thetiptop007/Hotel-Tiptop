@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import logoFull from "../assets/logo-full.png";
 
 export default function Sidebar() {
   const navigate = useNavigate();
@@ -61,6 +62,13 @@ export default function Sidebar() {
       {/* Header */}
       <div className="p-6 relative z-10">
         <div className="text-center mb-2">
+          <div className="flex items-center justify-center mb-3">
+            <img
+              src={logoFull}
+              alt="TipTop Hotel"
+              className="h-12 w-auto object-contain"
+            />
+          </div>
           <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             TipTop Hotel
           </h1>
@@ -110,25 +118,6 @@ export default function Sidebar() {
               )}
             </NavLink>
           ))}
-        </div>
-
-        {/* Quick Stats */}
-        <div className="mt-8 bg-white/40 backdrop-blur-lg rounded-2xl p-4 shadow-lg border border-white/30">
-          <h4 className="text-sm font-semibold text-gray-700 mb-3">Quick Stats</h4>
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-600">Active Bookings</span>
-              <span className="text-sm font-semibold text-blue-600">24</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-600">Available Rooms</span>
-              <span className="text-sm font-semibold text-green-600">18</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-600">Total Revenue</span>
-              <span className="text-sm font-semibold text-purple-600">$12.5K</span>
-            </div>
-          </div>
         </div>
       </nav>
 

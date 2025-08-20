@@ -2,6 +2,7 @@
 import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import logoFull from "../assets/logo-full.png";
 
 export default function Login() {
     const navigate = useNavigate();
@@ -72,6 +73,13 @@ export default function Login() {
                 <div className="w-full max-w-md">
                     {/* Logo/Brand */}
                     <div className="text-center mb-8">
+                        <div className="flex items-center justify-center mb-4">
+                            <img
+                                src={logoFull}
+                                alt="TipTop Hotel"
+                                className="h-16 w-auto object-contain"
+                            />
+                        </div>
                         <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                             TipTop Hotel
                         </h1>

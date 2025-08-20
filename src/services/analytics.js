@@ -22,16 +22,6 @@ export const analyticsAPI = {
         }
     },
 
-    // Get customer analytics
-    getCustomerAnalytics: async (params = {}) => {
-        try {
-            const response = await apiService.getCustomerAnalytics(params);
-            return response;
-        } catch (error) {
-            throw error;
-        }
-    },
-
     // Get occupancy analytics
     getOccupancyAnalytics: async (params = {}) => {
         try {

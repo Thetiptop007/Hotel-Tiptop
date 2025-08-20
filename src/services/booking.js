@@ -176,6 +176,28 @@ export const bookingAPI = {
         } catch (error) {
             throw error;
         }
+    },
+
+    // Search customer by mobile or aadhaar
+    searchCustomer: async (mobile, aadhaar) => {
+        try {
+            const queryParams = new URLSearchParams();
+            if (mobile) queryParams.append('mobile', mobile);
+            if (aadhaar) queryParams.append('aadhaar', aadhaar);
+
+            const response = await fetch(`${apiService.baseURL}/bookings/search-customer?${queryParams}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            throw error;
+        }
     }
 };
 
