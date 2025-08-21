@@ -2,6 +2,15 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { bookingAPI } from "../services/booking";
 import { useAuth } from "../context/AuthContext";
 
+// Helper function to get current date in local timezone
+const getCurrentLocalDate = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function BookingRecords() {
   const { isAuthenticated, token, user } = useAuth();
 
@@ -378,7 +387,7 @@ export default function BookingRecords() {
   const handleCheckout = useCallback(async (booking) => {
     setCheckingOutBooking(booking._id);
     try {
-      const checkoutDate = new Date().toISOString().split('T')[0]; // Today's date
+      const checkoutDate = getCurrentLocalDate(); // Today's date in local timezone
       const checkoutData = {
         ...booking,
         checkOut: checkoutDate,
@@ -876,12 +885,44 @@ export default function BookingRecords() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">Check-out Date</label>
-                  <input
-                    type="date"
-                    value={editFormData.checkOut}
-                    onChange={(e) => setEditFormData(prev => ({ ...prev, checkOut: e.target.value }))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
-                  />
+                  {!editFormData.checkOut || editFormData.status === 'checked-in' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const today = getCurrentLocalDate();
+                        setEditFormData(prev => ({
+                          ...prev,
+                          checkOut: today,
+                          status: 'checked-out'
+                        }));
+                      }}
+                      className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-3 px-4 rounded-xl font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-4 focus:ring-green-500/30 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                      <span>Checkout Today</span>
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-700 font-medium">
+                        Checked out: {new Date(editFormData.checkOut).toLocaleDateString()}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditFormData(prev => ({
+                            ...prev,
+                            checkOut: '',
+                            status: 'checked-in'
+                          }));
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-500 font-medium"
+                      >
+                        Clear checkout & mark as checked-in
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1046,73 +1087,145 @@ export default function BookingRecords() {
                 {/* Documents Section */}
                 {selectedBooking.documents && selectedBooking.documents.length > 0 && (
                   <div>
-                    <div className="text-sm text-gray-600 mb-3">Uploaded Documents</div>
-                    <div className="space-y-4">
-                      {selectedBooking.documents.map((documentUrl, index) => {
-                        const documentType = selectedBooking.documentTypes && selectedBooking.documentTypes[index]
-                          ? selectedBooking.documentTypes[index] : 'document';
-                        const isImage = documentUrl.match(/\.(jpg|jpeg|png|gif)$/i);
+                    <div className="text-sm text-gray-600 mb-3">Aadhaar Documents</div>
 
-                        return (
-                          <div key={index} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center">
-                                <svg className="w-5 h-5 text-blue-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                                </svg>
-                                <span className="text-sm font-medium text-blue-700">
-                                  {documentType.charAt(0).toUpperCase() + documentType.slice(1)} Document
-                                </span>
-                              </div>
-                              <div className="flex space-x-2">
+                    {/* Check if we have both front and back documents */}
+                    {selectedBooking.documentTypes &&
+                      selectedBooking.documentTypes.includes('aadhaar-front') &&
+                      selectedBooking.documentTypes.includes('aadhaar-back') ? (
+                      // Display side by side for front and back
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {selectedBooking.documents.map((documentUrl, index) => {
+                          const documentType = selectedBooking.documentTypes[index];
+                          const isImage = documentUrl.match(/\.(jpg|jpeg|png|gif)$/i);
+                          const isFront = documentType === 'aadhaar-front';
+                          const isBack = documentType === 'aadhaar-back';
+
+                          return (
+                            <div key={index} className={`${isFront ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200'} border rounded-lg p-4`}>
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center">
+                                  <svg className={`w-5 h-5 ${isFront ? 'text-blue-600' : 'text-green-600'} mr-2`} fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
+                                  </svg>
+                                  <span className={`text-sm font-medium ${isFront ? 'text-blue-700' : 'text-green-700'}`}>
+                                    {isFront ? 'Aadhaar Front' : 'Aadhaar Back'}
+                                  </span>
+                                </div>
                                 <button
                                   onClick={() => window.open(documentUrl, '_blank')}
-                                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors duration-200"
+                                  className={`${isFront ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'} text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors duration-200`}
                                 >
                                   View Full Size
                                 </button>
                               </div>
-                            </div>
 
-                            {/* Image Preview */}
-                            {isImage ? (
-                              <div className="relative bg-white rounded-lg border border-gray-200 overflow-hidden">
-                                <img
-                                  src={documentUrl}
-                                  alt={`${documentType} document`}
-                                  className="w-full h-48 object-contain bg-gray-50"
-                                  onError={(e) => {
-                                    e.target.style.display = 'none';
-                                    e.target.nextSibling.style.display = 'flex';
-                                  }}
-                                />
-                                <div
-                                  className="w-full h-48 bg-gray-100 items-center justify-center text-gray-500"
-                                  style={{ display: 'none' }}
-                                >
-                                  <div className="text-center">
-                                    <svg className="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <p className="text-sm">Image failed to load</p>
+                              {/* Image Preview */}
+                              {isImage ? (
+                                <div className="relative bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                  <img
+                                    src={documentUrl}
+                                    alt={`Aadhaar ${isFront ? 'front' : 'back'} side`}
+                                    className="w-full h-48 object-contain bg-gray-50"
+                                    onError={(e) => {
+                                      e.target.style.display = 'none';
+                                      e.target.nextSibling.style.display = 'flex';
+                                    }}
+                                  />
+                                  <div
+                                    className="w-full h-48 bg-gray-100 items-center justify-center text-gray-500"
+                                    style={{ display: 'none' }}
+                                  >
+                                    <div className="text-center">
+                                      <svg className="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <p className="text-sm">Image failed to load</p>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            ) : (
-                              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                                <div className="text-center text-gray-500">
-                                  <svg className="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
-                                  <p className="text-sm font-medium">PDF Document</p>
-                                  <p className="text-xs text-gray-400">Click "Open Full Size" to view</p>
+                              ) : (
+                                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                                  <div className="text-center text-gray-500">
+                                    <svg className="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <p className="text-sm font-medium">Document</p>
+                                    <p className="text-xs text-gray-400">Click "View Full Size" to open</p>
+                                  </div>
                                 </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      // Fallback for old documents or single documents
+                      <div className="space-y-4">
+                        {selectedBooking.documents.map((documentUrl, index) => {
+                          const documentType = selectedBooking.documentTypes && selectedBooking.documentTypes[index]
+                            ? selectedBooking.documentTypes[index] : 'document';
+                          const isImage = documentUrl.match(/\.(jpg|jpeg|png|gif)$/i);
+
+                          return (
+                            <div key={index} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center">
+                                  <svg className="w-5 h-5 text-gray-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                                  </svg>
+                                  <span className="text-sm font-medium text-gray-700">
+                                    {documentType.charAt(0).toUpperCase() + documentType.slice(1)} Document
+                                  </span>
+                                </div>
+                                <button
+                                  onClick={() => window.open(documentUrl, '_blank')}
+                                  className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition-colors duration-200"
+                                >
+                                  View Full Size
+                                </button>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+
+                              {/* Image Preview */}
+                              {isImage ? (
+                                <div className="relative bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                  <img
+                                    src={documentUrl}
+                                    alt={`${documentType} document`}
+                                    className="w-full h-48 object-contain bg-gray-50"
+                                    onError={(e) => {
+                                      e.target.style.display = 'none';
+                                      e.target.nextSibling.style.display = 'flex';
+                                    }}
+                                  />
+                                  <div
+                                    className="w-full h-48 bg-gray-100 items-center justify-center text-gray-500"
+                                    style={{ display: 'none' }}
+                                  >
+                                    <div className="text-center">
+                                      <svg className="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <p className="text-sm">Image failed to load</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                                  <div className="text-center text-gray-500">
+                                    <svg className="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <p className="text-sm font-medium">Document</p>
+                                    <p className="text-xs text-gray-400">Click "View Full Size" to view</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
