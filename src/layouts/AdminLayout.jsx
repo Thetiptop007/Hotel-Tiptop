@@ -6,7 +6,6 @@ export default function AdminLayout() {
   const location = useLocation();
 
   useEffect(() => {
-    console.log("AdminLayout - Current route:", location.pathname);
     // Force scroll to top on route change
     window.scrollTo(0, 0);
   }, [location.pathname]);

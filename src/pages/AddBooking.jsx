@@ -1,14 +1,17 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { bookingAPI } from "../services/booking";
+import { cloudinaryService } from "../services/cloudinary";
 
 export default function AddBooking() {
   const [isLoading, setIsLoading] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [customerHistory, setCustomerHistory] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [uploadedDocument, setUploadedDocument] = useState(null);
   const [formData, setFormData] = useState({
     customerName: '',
     customerMobile: '',
@@ -19,10 +22,7 @@ export default function AddBooking() {
     document: null
   });
 
-  // Debug log
-  useEffect(() => {
-    console.log("AddBooking component rendered");
-  }, []);  // Mock customer database for demonstration (now indexed by both mobile and aadhaar)
+  // Mock customer database for demonstration (now indexed by both mobile and aadhaar)
   const mockCustomerData = {
     "9876543210": {
       name: "John Smith",
@@ -163,6 +163,42 @@ export default function AddBooking() {
     setSuccessMessage("");
 
     try {
+      // Validate mobile number before submission
+      if (formData.customerMobile.length !== 10) {
+        throw new Error('Mobile number must be exactly 10 digits');
+      }
+
+      if (!['6', '7', '8', '9'].includes(formData.customerMobile.charAt(0))) {
+        throw new Error('Mobile number must start with 6, 7, 8, or 9');
+      }
+
+      // Additional mobile number validation
+      const uniqueDigits = new Set(formData.customerMobile).size;
+      if (uniqueDigits === 1) {
+        throw new Error('Mobile number cannot have all same digits');
+      }
+
+      let documentUrl = null;
+      let documentPublicId = null;
+
+      // Upload document to Cloudinary if provided
+      if (formData.document) {
+        setIsUploading(true);
+        const uploadResult = await cloudinaryService.uploadImage(formData.document, 'hotel-documents/aadhaar');
+
+        if (uploadResult.success) {
+          documentUrl = uploadResult.data.url;
+          documentPublicId = uploadResult.data.publicId;
+          setUploadedDocument({
+            url: documentUrl,
+            publicId: documentPublicId
+          });
+        } else {
+          throw new Error(`Document upload failed: ${uploadResult.error}`);
+        }
+        setIsUploading(false);
+      }
+
       // Format Aadhaar number before submission if it's not already formatted
       let formattedAadhaar = formData.customerAadhaar;
       if (formattedAadhaar && !formattedAadhaar.includes('-')) {
@@ -179,7 +215,12 @@ export default function AddBooking() {
         rent: parseFloat(formData.rent),
         room: formData.room || 'TBD',
         checkIn: formData.checkIn,
-        status: 'checked-in'
+        status: 'checked-in',
+        documents: documentUrl ? [documentUrl] : [],
+        documentMetadata: documentPublicId ? {
+          publicId: documentPublicId,
+          type: 'aadhaar'
+        } : null
       };
 
       const response = await bookingAPI.createBooking(bookingData);
@@ -194,8 +235,9 @@ export default function AddBooking() {
           rent: '',
           room: '',
           checkIn: new Date().toISOString().split('T')[0],
-          aadhaarImage: null
+          document: null
         });
+        setUploadedDocument(null);
         setShowHistory(false);
         setCustomerHistory(null);
       }
@@ -209,8 +251,50 @@ export default function AddBooking() {
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
 
+    // Format and validate mobile number
+    if (name === 'customerMobile') {
+      // Remove all non-digit characters
+      const numbers = value.replace(/\D/g, '');
+      // Limit to 10 digits
+      const limited = numbers.slice(0, 10);
+
+      // Validate mobile number format
+      if (limited.length > 0) {
+        // Check if it starts with valid digits (6, 7, 8, 9)
+        const firstDigit = limited.charAt(0);
+        if (!['6', '7', '8', '9'].includes(firstDigit)) {
+          setError('Mobile number must start with 6, 7, 8, or 9');
+          return;
+        }
+      }
+
+      // Check for invalid patterns
+      if (limited.length >= 3) {
+        // Check for repeated digits (like 1111111111)
+        const uniqueDigits = new Set(limited).size;
+        if (uniqueDigits === 1) {
+          setError('Mobile number cannot have all same digits');
+          return;
+        }
+
+        // Check for sequential patterns (like 1234567890)
+        const isSequential = limited.split('').every((digit, index) => {
+          if (index === 0) return true;
+          return parseInt(digit) === (parseInt(limited[index - 1]) + 1) % 10;
+        });
+        if (isSequential) {
+          setError('Mobile number cannot be sequential digits');
+          return;
+        }
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        [name]: limited
+      }));
+    }
     // Format Aadhaar number as user types
-    if (name === 'customerAadhaar') {
+    else if (name === 'customerAadhaar') {
       // Remove all non-digit characters
       const numbers = value.replace(/\D/g, '');
       // Limit to 12 digits
@@ -234,15 +318,26 @@ export default function AddBooking() {
         [name]: value
       }));
     }
-    // Clear messages when user types
-    if (error) setError("");
+    // Clear messages when user types (except for mobile validation errors)
+    if (error && name !== 'customerMobile') setError("");
     if (successMessage) setSuccessMessage("");
   }, [error, successMessage]);
 
   const handleFileChange = useCallback((e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file
+      const validation = cloudinaryService.validateFile(file, 5); // 5MB max
+      if (!validation.valid) {
+        setError(validation.error);
+        return;
+      }
+      setError(""); // Clear any previous errors
+    }
+
     setFormData(prev => ({
       ...prev,
-      document: e.target.files[0]
+      document: file
     }));
   }, []);
 
@@ -328,9 +423,13 @@ export default function AddBooking() {
 
   // Memoized form validation for better performance
   const isFormValid = useMemo(() => {
+    const isMobileValid = formData.customerMobile.trim().length === 10 &&
+      ['6', '7', '8', '9'].includes(formData.customerMobile.charAt(0));
+    const isAadhaarValid = formData.customerAadhaar.trim().length >= 14; // Should be 12 digits + 2 dashes
+
     return formData.customerName.trim() &&
-      formData.customerMobile.trim() &&
-      formData.customerAadhaar.trim() &&
+      isMobileValid &&
+      isAadhaarValid &&
       formData.rent &&
       formData.checkIn;
   }, [formData]);
@@ -433,16 +532,42 @@ export default function AddBooking() {
                     name="customerMobile"
                     value={formData.customerMobile}
                     onChange={handleInputChange}
-                    placeholder="Enter mobile number"
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                    placeholder="Enter 10-digit mobile number"
+                    className={`w-full px-4 py-3 rounded-xl border ${formData.customerMobile && formData.customerMobile.length === 10 && ['6', '7', '8', '9'].includes(formData.customerMobile.charAt(0))
+                      ? 'border-green-300 focus:border-green-500 focus:ring-green-500/20'
+                      : formData.customerMobile && formData.customerMobile.length > 0
+                        ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20'
+                        : 'border-gray-200 focus:border-blue-500 focus:ring-blue-500/20'
+                      } focus:ring-2 outline-none transition-all duration-300 bg-white/50`}
+                    maxLength="10"
                     required
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center pr-4">
-                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                    </svg>
+                    {formData.customerMobile && formData.customerMobile.length === 10 && ['6', '7', '8', '9'].includes(formData.customerMobile.charAt(0)) ? (
+                      <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                    ) : formData.customerMobile && formData.customerMobile.length > 0 ? (
+                      <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                    )}
                   </div>
                 </div>
+                {formData.customerMobile && formData.customerMobile.length > 0 && formData.customerMobile.length < 10 && (
+                  <p className="text-xs text-orange-600 mt-1">
+                    Mobile number must be 10 digits long
+                  </p>
+                )}
+                {formData.customerMobile && formData.customerMobile.length === 10 && !['6', '7', '8', '9'].includes(formData.customerMobile.charAt(0)) && (
+                  <p className="text-xs text-red-600 mt-1">
+                    Mobile number must start with 6, 7, 8, or 9
+                  </p>
+                )}
               </div>
             </div>
 
@@ -626,7 +751,7 @@ export default function AddBooking() {
             {/* File Upload */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">
-                Upload Document
+                Upload Aadhaar Document
               </label>
               <div className="relative">
                 <input
@@ -636,6 +761,38 @@ export default function AddBooking() {
                   accept=".pdf,.jpg,.jpeg,.png"
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                 />
+                {formData.document && (
+                  <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center">
+                      <svg className="w-5 h-5 text-blue-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-sm text-blue-700 font-medium">
+                        {formData.document.name} ({(formData.document.size / 1024 / 1024).toFixed(2)} MB)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, document: null }))}
+                        className="ml-auto text-red-500 hover:text-red-700"
+                      >
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {isUploading && (
+                  <div className="mt-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <div className="flex items-center">
+                      <svg className="animate-spin w-5 h-5 text-yellow-600 mr-2" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span className="text-sm text-yellow-700 font-medium">Uploading document...</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

@@ -27,27 +27,11 @@ export default function BookingRecords() {
     status: ''
   });
 
-  // Debug authentication state
-  useEffect(() => {
-    console.log("BookingRecords - Auth State:", {
-      isAuthenticated,
-      hasToken: !!token,
-      tokenPreview: token ? token.substring(0, 50) + "..." : null,
-      user: user?.username
-    });
-  }, [isAuthenticated, token, user]);
-
   // Fetch bookings from API
   const fetchBookings = async () => {
     try {
       setLoading(true);
       setError("");
-
-      console.log("BookingRecords - Starting fetch with auth:", {
-        isAuthenticated,
-        hasToken: !!token,
-        tokenFromStorage: !!localStorage.getItem('token')
-      });
 
       // Build query parameters
       const params = {
@@ -58,16 +42,7 @@ export default function BookingRecords() {
         sortBy: sortBy
       };
 
-      console.log("BookingRecords - Fetching with params:", params);
-
       const response = await bookingAPI.getBookings(params);
-
-      console.log("BookingRecords - API Response:", {
-        success: response.success,
-        bookingsCount: response.data?.bookings?.length || 0,
-        totalCount: response.data?.totalCount || 0,
-        fullResponse: response
-      });
 
       if (response.success) {
         setBookings(response.data.bookings || []);
@@ -347,10 +322,10 @@ export default function BookingRecords() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${booking.status === 'checked-in'
-                            ? 'bg-green-100 text-green-800'
-                            : booking.status === 'checked-out'
-                              ? 'bg-gray-100 text-gray-800'
-                              : 'bg-yellow-100 text-yellow-800'
+                          ? 'bg-green-100 text-green-800'
+                          : booking.status === 'checked-out'
+                            ? 'bg-gray-100 text-gray-800'
+                            : 'bg-yellow-100 text-yellow-800'
                           }`}>
                           {booking.status || 'checked-in'}
                         </span>
@@ -632,10 +607,10 @@ export default function BookingRecords() {
                 <div>
                   <div className="text-sm text-gray-600 mb-1">Status</div>
                   <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${selectedBooking.status === 'checked-in'
-                      ? 'bg-green-100 text-green-800'
-                      : selectedBooking.status === 'checked-out'
-                        ? 'bg-gray-100 text-gray-800'
-                        : 'bg-yellow-100 text-yellow-800'
+                    ? 'bg-green-100 text-green-800'
+                    : selectedBooking.status === 'checked-out'
+                      ? 'bg-gray-100 text-gray-800'
+                      : 'bg-yellow-100 text-yellow-800'
                     }`}>
                     {selectedBooking.status || 'checked-in'}
                   </span>

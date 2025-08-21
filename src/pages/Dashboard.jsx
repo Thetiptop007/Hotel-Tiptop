@@ -15,11 +15,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Debug log
-  useEffect(() => {
-    console.log("Dashboard component rendered");
-  }, []);
-
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
@@ -180,27 +175,27 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4">
                       <div className={`relative w-12 h-12 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-lg ${booking.status === 'checked-in'
-                          ? 'bg-gradient-to-r from-green-500 to-green-600'
-                          : booking.status === 'checked-out'
-                            ? 'bg-gradient-to-r from-gray-500 to-gray-600'
-                            : 'bg-gradient-to-r from-blue-500 to-blue-600'
+                        ? 'bg-gradient-to-r from-green-500 to-green-600'
+                        : booking.status === 'checked-out'
+                          ? 'bg-gradient-to-r from-gray-500 to-gray-600'
+                          : 'bg-gradient-to-r from-blue-500 to-blue-600'
                         }`}>
                         {booking.customerName ? booking.customerName.split(' ').map(n => n[0]).join('').slice(0, 2) : 'U'}
                         <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${booking.status === 'checked-in' ? 'bg-green-400' :
-                            booking.status === 'checked-out' ? 'bg-gray-400' : 'bg-blue-400'
+                          booking.status === 'checked-out' ? 'bg-gray-400' : 'bg-blue-400'
                           }`}></div>
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center space-x-2">
                           <p className="font-bold text-gray-800 text-lg">{booking.customerName || 'Unknown Customer'}</p>
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${booking.status === 'checked-in'
-                              ? 'bg-green-100 text-green-800 border border-green-200'
-                              : booking.status === 'checked-out'
-                                ? 'bg-gray-100 text-gray-800 border border-gray-200'
-                                : 'bg-blue-100 text-blue-800 border border-blue-200'
+                            ? 'bg-green-100 text-green-800 border border-green-200'
+                            : booking.status === 'checked-out'
+                              ? 'bg-gray-100 text-gray-800 border border-gray-200'
+                              : 'bg-blue-100 text-blue-800 border border-blue-200'
                             }`}>
                             <div className={`w-1.5 h-1.5 rounded-full mr-1.5 ${booking.status === 'checked-in' ? 'bg-green-500' :
-                                booking.status === 'checked-out' ? 'bg-gray-500' : 'bg-blue-500'
+                              booking.status === 'checked-out' ? 'bg-gray-500' : 'bg-blue-500'
                               }`}></div>
                             {booking.status?.replace('-', ' ') || 'pending'}
                           </span>

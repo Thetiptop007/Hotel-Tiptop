@@ -45,24 +45,9 @@ class ApiService {
             config.body = JSON.stringify(options.body);
         }
 
-        console.log("ApiService - Making request:", {
-            url,
-            method: config.method,
-            headers: config.headers,
-            hasToken: !!this.getAuthToken()
-        });
-
         try {
             const response = await fetch(url, config);
             const data = await response.json();
-
-            console.log("ApiService - Response received:", {
-                ok: response.ok,
-                status: response.status,
-                success: data.success,
-                dataKeys: Object.keys(data),
-                message: data.message
-            });
 
             if (!response.ok) {
                 throw new Error(data.message || 'Something went wrong');
@@ -132,13 +117,6 @@ class ApiService {
     async getBookings(params = {}) {
         const queryString = new URLSearchParams(params).toString();
         const endpoint = queryString ? `/bookings?${queryString}` : '/bookings';
-
-        console.log("ApiService - getBookings called:", {
-            endpoint,
-            params,
-            hasToken: !!this.getAuthToken(),
-            authHeaders: this.getAuthHeaders()
-        });
 
         return await this.apiCall(endpoint);
     }
