@@ -26,6 +26,11 @@ export default function AddBooking() {
     front: null,
     back: null
   });
+
+  // Group booking states
+  const [additionalGuests, setAdditionalGuests] = useState([]);
+  const [showGroupBooking, setShowGroupBooking] = useState(false);
+
   const [formData, setFormData] = useState({
     customerName: '',
     customerMobile: '',
@@ -178,8 +183,21 @@ export default function AddBooking() {
     setSuccessMessage("");
 
     try {
-      // Validate mobile number before submission
-      if (formData.customerMobile.length !== 10) {
+      // Validate customer name (backend requires 2-100 characters, letters and spaces only)
+      if (formData.customerName.trim().length < 2) {
+        throw new Error('Customer name must be at least 2 characters long');
+      }
+
+      if (formData.customerName.trim().length > 100) {
+        throw new Error('Customer name cannot exceed 100 characters');
+      }
+
+      if (!/^[a-zA-Z\s]+$/.test(formData.customerName.trim())) {
+        throw new Error('Customer name can only contain letters and spaces');
+      }
+
+      // Validate mobile number format for backend
+      if (formData.customerMobile.length !== 10 || !/^[0-9]{10}$/.test(formData.customerMobile)) {
         throw new Error('Mobile number must be exactly 10 digits');
       }
 
@@ -252,6 +270,112 @@ export default function AddBooking() {
         }
       }
 
+      // Validate Aadhaar format for backend
+      if (formattedAadhaar && !/^[0-9]{4}-[0-9]{4}-[0-9]{4}$/.test(formattedAadhaar)) {
+        throw new Error('Aadhaar number must be in format XXXX-XXXX-XXXX with only numbers');
+      }
+
+      // Process additional guests documents
+      const processedAdditionalGuests = [];
+
+      if (additionalGuests && additionalGuests.length > 0) {
+        for (let i = 0; i < additionalGuests.length; i++) {
+          const guest = additionalGuests[i];
+
+          // Validate guest name is provided
+          if (!guest.name || guest.name.trim().length === 0) {
+            throw new Error(`Guest ${i + 2} name is required`);
+          }
+
+          // Validate guest name length and format (backend requires 2-100 characters, letters and spaces only)
+          if (guest.name.trim().length < 2) {
+            throw new Error(`Guest ${i + 2} name must be at least 2 characters long`);
+          }
+
+          if (guest.name.trim().length > 100) {
+            throw new Error(`Guest ${i + 2} name cannot exceed 100 characters`);
+          }
+
+          if (!/^[a-zA-Z\s]+$/.test(guest.name.trim())) {
+            throw new Error(`Guest ${i + 2} name can only contain letters and spaces`);
+          }
+
+          // Validate and format guest mobile number
+          let guestMobile = guest.mobile || '';
+          if (guestMobile) {
+            // Ensure mobile is exactly 10 digits
+            const mobileString = String(guestMobile).replace(/\D/g, '');
+            if (mobileString.length !== 10) {
+              throw new Error(`Guest ${i + 2} mobile number must be exactly 10 digits`);
+            }
+            if (!['6', '7', '8', '9'].includes(mobileString.charAt(0))) {
+              throw new Error(`Guest ${i + 2} mobile number must start with 6, 7, 8, or 9`);
+            }
+            guestMobile = mobileString;
+          }
+
+          // Format guest Aadhaar number
+          let guestAadhaar = guest.aadhaar || '';
+          if (guestAadhaar && !guestAadhaar.includes('-')) {
+            const numbers = guestAadhaar.replace(/\D/g, '');
+            if (numbers.length === 12) {
+              guestAadhaar = `${numbers.slice(0, 4)}-${numbers.slice(4, 8)}-${numbers.slice(8, 12)}`;
+            }
+          }
+
+          // Validate guest Aadhaar format for backend
+          if (guestAadhaar && !/^[0-9]{4}-[0-9]{4}-[0-9]{4}$/.test(guestAadhaar)) {
+            throw new Error(`Guest ${i + 2} Aadhaar number must be in format XXXX-XXXX-XXXX with only numbers`);
+          }
+
+          const processedGuest = {
+            name: guest.name.trim(),
+            mobile: guestMobile,
+            aadhaar: guestAadhaar,
+            relationship: guest.relationship || 'Guest',
+            documents: [],
+            documentPublicIds: [],
+            documentTypes: []
+          };
+
+          // Upload guest's front document if provided
+          if (guest.aadhaarFront) {
+            try {
+              const uploadResult = await cloudinaryService.uploadImage(
+                guest.aadhaarFront,
+                `hotel-documents/guest-${i + 1}-aadhaar-front`
+              );
+              if (uploadResult.success) {
+                processedGuest.documents.push(uploadResult.data.url);
+                processedGuest.documentPublicIds.push(uploadResult.data.publicId);
+                processedGuest.documentTypes.push('aadhaar-front');
+              }
+            } catch (err) {
+              console.warn(`Failed to upload guest ${i + 1} front document:`, err);
+            }
+          }
+
+          // Upload guest's back document if provided
+          if (guest.aadhaarBack) {
+            try {
+              const uploadResult = await cloudinaryService.uploadImage(
+                guest.aadhaarBack,
+                `hotel-documents/guest-${i + 1}-aadhaar-back`
+              );
+              if (uploadResult.success) {
+                processedGuest.documents.push(uploadResult.data.url);
+                processedGuest.documentPublicIds.push(uploadResult.data.publicId);
+                processedGuest.documentTypes.push('aadhaar-back');
+              }
+            } catch (err) {
+              console.warn(`Failed to upload guest ${i + 1} back document:`, err);
+            }
+          }
+
+          processedAdditionalGuests.push(processedGuest);
+        }
+      }
+
       const bookingData = {
         customerName: formData.customerName,
         customerMobile: formData.customerMobile,
@@ -262,7 +386,9 @@ export default function AddBooking() {
         status: 'checked-in',
         documents: documentUrls,
         documentTypes: documentTypes,
-        documentPublicIds: documentPublicIds
+        documentPublicIds: documentPublicIds,
+        additionalGuests: processedAdditionalGuests,
+        groupSize: 1 + processedAdditionalGuests.length
       };
 
       const response = await bookingAPI.createBooking(bookingData);
@@ -284,15 +410,18 @@ export default function AddBooking() {
           front: null,
           back: null
         });
+        setAdditionalGuests([]);
+        setShowGroupBooking(false);
         setShowHistory(false);
         setCustomerHistory(null);
       }
     } catch (error) {
-      setError(error.message || 'Failed to create booking. Please try again.');
+      console.error('Booking submission error:', error);
+      setError(error.message || 'Failed to create booking. Please check all fields and try again.');
     } finally {
       setIsLoading(false);
     }
-  }, [formData]);
+  }, [formData, additionalGuests]);
 
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
@@ -467,20 +596,102 @@ export default function AddBooking() {
         setSuccessMessage('Customer not found. This appears to be a new customer.');
       }
     } catch (error) {
-      setError(error.message || 'Failed to search customer. Please try again.');
+      console.warn('Customer search failed:', error);
       setCustomerHistory(null);
+      // Don't show error for customer not found - it's normal for new customers
+      setSuccessMessage('Customer history not available. This may be a new customer.');
     } finally {
       setIsChecking(false);
     }
   }, [formData.customerAadhaar]);
+
+  // Additional guest management functions
+  const addAdditionalGuest = useCallback(() => {
+    const newGuest = {
+      id: Date.now(),
+      name: '',
+      mobile: '',
+      aadhaar: '',
+      relationship: 'Guest',
+      aadhaarFront: null,
+      aadhaarBack: null
+    };
+    setAdditionalGuests(prev => [...prev, newGuest]);
+    setShowGroupBooking(true);
+  }, []);
+
+  const removeAdditionalGuest = useCallback((guestId) => {
+    setAdditionalGuests(prev => prev.filter(guest => guest.id !== guestId));
+    if (additionalGuests.length <= 1) {
+      setShowGroupBooking(false);
+    }
+  }, [additionalGuests.length]);
+
+  const updateAdditionalGuest = useCallback((guestId, field, value) => {
+    // Mobile validation for guests
+    if (field === 'mobile') {
+      // Remove all non-digit characters
+      const numbers = value.replace(/\D/g, '');
+      // Limit to 10 digits
+      const limited = numbers.slice(0, 10);
+
+      // Validate mobile number format
+      if (limited.length > 0) {
+        // Check if it starts with valid digits (6, 7, 8, 9)
+        const firstDigit = limited.charAt(0);
+        if (!['6', '7', '8', '9'].includes(firstDigit) && limited.length > 0) {
+          return; // Don't update if invalid
+        }
+      }
+
+      // Check for invalid patterns
+      if (limited.length >= 3) {
+        // Check for repeated digits (like 1111111111)
+        const uniqueDigits = new Set(limited).size;
+        if (uniqueDigits === 1) {
+          return; // Don't update if invalid
+        }
+
+        // Check for sequential patterns (like 1234567890)
+        const isSequential = limited.split('').every((digit, index) => {
+          if (index === 0) return true;
+          return parseInt(digit) === (parseInt(limited[index - 1]) + 1) % 10;
+        });
+        if (isSequential) {
+          return; // Don't update if invalid
+        }
+      }
+
+      setAdditionalGuests(prev =>
+        prev.map(guest =>
+          guest.id === guestId
+            ? { ...guest, [field]: limited }
+            : guest
+        )
+      );
+    } else {
+      setAdditionalGuests(prev =>
+        prev.map(guest =>
+          guest.id === guestId
+            ? { ...guest, [field]: value }
+            : guest
+        )
+      );
+    }
+  }, []);
+
+  const handleGuestFileChange = useCallback((guestId, side, file) => {
+    updateAdditionalGuest(guestId, side === 'front' ? 'aadhaarFront' : 'aadhaarBack', file);
+  }, [updateAdditionalGuest]);
 
   // Memoized form validation for better performance
   const isFormValid = useMemo(() => {
     const isMobileValid = formData.customerMobile.trim().length === 10 &&
       ['6', '7', '8', '9'].includes(formData.customerMobile.charAt(0));
     const isAadhaarValid = formData.customerAadhaar.trim().length >= 14; // Should be 12 digits + 2 dashes
+    const isNameValid = formData.customerName.trim().length >= 2; // Backend requires min 2 characters
 
-    return formData.customerName.trim() &&
+    return isNameValid &&
       isMobileValid &&
       isAadhaarValid &&
       formData.rent &&
@@ -810,18 +1021,15 @@ export default function AddBooking() {
             {/* Row 4 - Aadhaar Document Upload Section */}
             <div className="space-y-4">
               <label className="text-sm font-medium text-gray-700">
-                Upload Aadhaar Documents
+                📎 Upload Aadhaar Documents (Optional)
               </label>
 
-              {/* Front and Back Side Upload - Side by Side */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Simplified Upload Section */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Front Side Upload */}
                 <div className="space-y-2">
-                  <label className="text-xs font-medium text-blue-700 flex items-center">
-                    <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-                    </svg>
-                    Aadhaar Front Side
+                  <label className="text-sm font-medium text-blue-600">
+                    📄 Front Side
                   </label>
                   <div className="relative">
                     <input
@@ -829,43 +1037,32 @@ export default function AddBooking() {
                       name="aadhaarFront"
                       onChange={(e) => handleFileChange(e, 'front')}
                       accept=".jpg,.jpeg,.png"
-                      className="w-full px-4 py-3 rounded-xl border-2 border-dashed border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-blue-50/50 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"
+                      className="w-full px-3 py-2 rounded-lg border-2 border-dashed border-blue-200 hover:border-blue-300 focus:border-blue-400 focus:outline-none transition-colors bg-blue-25 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"
                     />
+
                     {formData.aadhaarFront && (
-                      <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200 flex items-center justify-between">
                         <div className="flex items-center">
-                          <svg className="w-5 h-5 text-blue-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                          <span className="text-sm text-blue-700 font-medium flex-1">
-                            {formData.aadhaarFront.name.length > 20
-                              ? `${formData.aadhaarFront.name.substring(0, 20)}...`
-                              : formData.aadhaarFront.name}
+                          <span className="text-green-600 mr-2">✓</span>
+                          <span className="text-sm text-blue-700 truncate">
+                            {formData.aadhaarFront.name}
                           </span>
-                          <span className="text-xs text-blue-600 mr-2">
-                            {(formData.aadhaarFront.size / 1024 / 1024).toFixed(1)}MB
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setFormData(prev => ({ ...prev, aadhaarFront: null }))}
-                            className="text-red-500 hover:text-red-700 p-1"
-                          >
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
-                          </button>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, aadhaarFront: null }))}
+                          className="text-red-500 hover:text-red-700 ml-2 text-lg"
+                          title="Remove file"
+                        >
+                          ×
+                        </button>
                       </div>
                     )}
+
                     {isUploadingFront && (
-                      <div className="mt-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                        <div className="flex items-center">
-                          <svg className="animate-spin w-5 h-5 text-yellow-600 mr-2" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          <span className="text-sm text-yellow-700 font-medium">Uploading front...</span>
-                        </div>
+                      <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200 flex items-center">
+                        <div className="animate-spin mr-2">⏳</div>
+                        <span className="text-sm text-yellow-700">Uploading...</span>
                       </div>
                     )}
                   </div>
@@ -873,11 +1070,8 @@ export default function AddBooking() {
 
                 {/* Back Side Upload */}
                 <div className="space-y-2">
-                  <label className="text-xs font-medium text-green-700 flex items-center">
-                    <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-                    </svg>
-                    Aadhaar Back Side
+                  <label className="text-sm font-medium text-green-600">
+                    📄 Back Side
                   </label>
                   <div className="relative">
                     <input
@@ -885,108 +1079,257 @@ export default function AddBooking() {
                       name="aadhaarBack"
                       onChange={(e) => handleFileChange(e, 'back')}
                       accept=".jpg,.jpeg,.png"
-                      className="w-full px-4 py-3 rounded-xl border-2 border-dashed border-green-300 focus:border-green-500 focus:ring-2 focus:ring-green-500/20 outline-none transition-all duration-300 bg-green-50/50 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-100 file:text-green-700 hover:file:bg-green-200"
+                      className="w-full px-3 py-2 rounded-lg border-2 border-dashed border-green-200 hover:border-green-300 focus:border-green-400 focus:outline-none transition-colors bg-green-25 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-green-100 file:text-green-700 hover:file:bg-green-200"
                     />
+
                     {formData.aadhaarBack && (
-                      <div className="mt-2 p-3 bg-green-50 rounded-lg border border-green-200">
+                      <div className="mt-2 p-2 bg-green-50 rounded border border-green-200 flex items-center justify-between">
                         <div className="flex items-center">
-                          <svg className="w-5 h-5 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                          <span className="text-sm text-green-700 font-medium flex-1">
-                            {formData.aadhaarBack.name.length > 20
-                              ? `${formData.aadhaarBack.name.substring(0, 20)}...`
-                              : formData.aadhaarBack.name}
+                          <span className="text-green-600 mr-2">✓</span>
+                          <span className="text-sm text-green-700 truncate">
+                            {formData.aadhaarBack.name}
                           </span>
-                          <span className="text-xs text-green-600 mr-2">
-                            {(formData.aadhaarBack.size / 1024 / 1024).toFixed(1)}MB
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setFormData(prev => ({ ...prev, aadhaarBack: null }))}
-                            className="text-red-500 hover:text-red-700 p-1"
-                          >
-                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
-                          </button>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, aadhaarBack: null }))}
+                          className="text-red-500 hover:text-red-700 ml-2 text-lg"
+                          title="Remove file"
+                        >
+                          ×
+                        </button>
                       </div>
                     )}
+
                     {isUploadingBack && (
-                      <div className="mt-2 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                        <div className="flex items-center">
-                          <svg className="animate-spin w-5 h-5 text-yellow-600 mr-2" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          <span className="text-sm text-yellow-700 font-medium">Uploading back...</span>
-                        </div>
+                      <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200 flex items-center">
+                        <div className="animate-spin mr-2">⏳</div>
+                        <span className="text-sm text-yellow-700">Uploading...</span>
                       </div>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Upload Progress Summary */}
-              {(isUploadingFront || isUploadingBack) && (
-                <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-green-50 rounded-xl border border-blue-200">
-                  <div className="flex items-center justify-center">
-                    <svg className="animate-spin w-6 h-6 text-blue-600 mr-3" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span className="text-blue-700 font-medium">
-                      {isUploadingFront && isUploadingBack
-                        ? 'Uploading both documents...'
-                        : isUploadingFront
-                          ? 'Uploading front side...'
-                          : 'Uploading back side...'}
-                    </span>
-                  </div>
-                </div>
-              )}
+              {/* Upload Tips */}
+              <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
+                💡 <strong>Tips:</strong> Upload clear photos of Aadhaar card. Accepted formats: JPG, PNG. Max size: 5MB each.
+              </div>
+            </div>
 
-              {/* Upload Status Summary */}
-              {(formData.aadhaarFront || formData.aadhaarBack) && (
-                <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <div className="text-sm text-gray-700">
-                    <strong>Upload Status:</strong>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {formData.aadhaarFront ? (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+            {/* Group Booking Section */}
+            <div className="mt-8 p-6 bg-gradient-to-r from-green-50/80 to-blue-50/80 rounded-xl border border-green-200/50">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-1">Group Booking</h3>
+                  <p className="text-sm text-gray-600">Add additional guests for group bookings</p>
+                </div>
+                <div className="flex items-center">
+                  <span className="text-sm font-medium text-gray-600">
+                    Total Guests: {1 + additionalGuests.length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Additional Guests Forms */}
+              {additionalGuests.map((guest, index) => (
+                <div key={guest.id} className="mt-4 p-5 bg-white/70 rounded-lg border border-gray-200/50 relative">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-medium text-gray-800">Guest {index + 2}</h4>
+                    <button
+                      type="button"
+                      onClick={() => removeAdditionalGuest(guest.id)}
+                      className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-50 transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    {/* Guest Name */}
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Guest Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={guest.name}
+                        onChange={(e) => updateAdditionalGuest(guest.id, 'name', e.target.value)}
+                        placeholder="Enter guest name"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                        required
+                      />
+                    </div>
+
+                    {/* Guest Mobile */}
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Mobile Number
+                      </label>
+                      <input
+                        type="text"
+                        value={guest.mobile}
+                        onChange={(e) => updateAdditionalGuest(guest.id, 'mobile', e.target.value)}
+                        placeholder="Enter 10-digit mobile number"
+                        className={`w-full px-4 py-3 rounded-xl border ${guest.mobile && guest.mobile.length === 10 && ['6', '7', '8', '9'].includes(guest.mobile.charAt(0))
+                          ? 'border-green-300 focus:border-green-500 focus:ring-green-500/20 bg-green-50/50'
+                          : guest.mobile && guest.mobile.length > 0
+                            ? 'border-red-300 focus:border-red-500 focus:ring-red-500/20 bg-red-50/50'
+                            : 'border-gray-200 focus:border-blue-500 focus:ring-blue-500/20'
+                          } focus:ring-2 outline-none transition-all duration-300 bg-white/50`}
+                        maxLength="10"
+                      />
+                      <div className="absolute inset-y-0 right-0 top-8 flex items-center pr-4">
+                        {guest.mobile && guest.mobile.length === 10 && ['6', '7', '8', '9'].includes(guest.mobile.charAt(0)) ? (
+                          <svg className="h-5 w-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                           </svg>
-                          Front Side Ready
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                          <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        ) : guest.mobile && guest.mobile.length > 0 ? (
+                          <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                           </svg>
-                          Front Side - Pending
-                        </span>
+                        ) : (
+                          <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                        )}
+                      </div>
+                      {guest.mobile && guest.mobile.length > 0 && guest.mobile.length < 10 && (
+                        <p className="text-xs text-red-500 mt-1">Mobile number must be 10 digits</p>
                       )}
-                      {formData.aadhaarBack ? (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                          Back Side Ready
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                          <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                          </svg>
-                          Back Side - Pending
-                        </span>
+                      {guest.mobile && guest.mobile.length > 0 && !['6', '7', '8', '9'].includes(guest.mobile.charAt(0)) && (
+                        <p className="text-xs text-red-500 mt-1">Mobile number must start with 6, 7, 8, or 9</p>
                       )}
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    {/* Guest Aadhaar */}
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Aadhaar Number
+                      </label>
+                      <input
+                        type="text"
+                        value={guest.aadhaar}
+                        onChange={(e) => {
+                          const numbers = e.target.value.replace(/\D/g, '');
+                          const formatted = numbers.length <= 12
+                            ? numbers.replace(/(\d{4})(\d{4})(\d{4})/, '$1-$2-$3').replace(/-+$/, '')
+                            : guest.aadhaar;
+                          updateAdditionalGuest(guest.id, 'aadhaar', formatted);
+                        }}
+                        placeholder="XXXX-XXXX-XXXX"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                      />
+                    </div>
+
+                    {/* Relationship */}
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Relationship
+                      </label>
+                      <select
+                        value={guest.relationship}
+                        onChange={(e) => updateAdditionalGuest(guest.id, 'relationship', e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                      >
+                        <option value="Guest">Guest</option>
+                        <option value="Family">Family</option>
+                        <option value="Friend">Friend</option>
+                        <option value="Colleague">Colleague</option>
+                        <option value="Business Partner">Business Partner</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Guest Document Upload */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Front Side Upload */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-blue-600">
+                        📄 Front Side
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png"
+                          onChange={(e) => handleGuestFileChange(guest.id, 'front', e.target.files[0])}
+                          className="w-full px-3 py-2 rounded-lg border-2 border-dashed border-blue-200 hover:border-blue-300 focus:border-blue-400 focus:outline-none transition-colors bg-blue-25 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"
+                        />
+                        {guest.aadhaarFront && (
+                          <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200 flex items-center justify-between">
+                            <div className="flex items-center">
+                              <span className="text-green-600 mr-2">✓</span>
+                              <span className="text-sm text-blue-700 truncate">
+                                {guest.aadhaarFront.name}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => updateAdditionalGuest(guest.id, 'aadhaarFront', null)}
+                              className="text-red-500 hover:text-red-700 ml-2 text-lg"
+                              title="Remove file"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Back Side Upload */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-green-600">
+                        📄 Back Side
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept=".jpg,.jpeg,.png"
+                          onChange={(e) => handleGuestFileChange(guest.id, 'back', e.target.files[0])}
+                          className="w-full px-3 py-2 rounded-lg border-2 border-dashed border-green-200 hover:border-green-300 focus:border-green-400 focus:outline-none transition-colors bg-green-25 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-green-100 file:text-green-700 hover:file:bg-green-200"
+                        />
+                        {guest.aadhaarBack && (
+                          <div className="mt-2 p-2 bg-green-50 rounded border border-green-200 flex items-center justify-between">
+                            <div className="flex items-center">
+                              <span className="text-green-600 mr-2">✓</span>
+                              <span className="text-sm text-green-700 truncate">
+                                {guest.aadhaarBack.name}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => updateAdditionalGuest(guest.id, 'aadhaarBack', null)}
+                              className="text-red-500 hover:text-red-700 ml-2 text-lg"
+                              title="Remove file"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              )}
+              ))}
+
+              {/* Add Guest Button at Bottom */}
+              <div className="mt-6 flex justify-center">
+                <button
+                  type="button"
+                  onClick={addAdditionalGuest}
+                  className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-4 focus:ring-green-500/30 transition-all duration-300 transform hover:scale-105 flex items-center space-x-2 shadow-lg"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Add Another Guest</span>
+                </button>
+              </div>
             </div>
 
             {/* Submit Button */}
@@ -1029,6 +1372,8 @@ export default function AddBooking() {
                     front: null,
                     back: null
                   });
+                  setAdditionalGuests([]);
+                  setShowGroupBooking(false);
                   setError("");
                   setSuccessMessage("");
                   setShowHistory(false);

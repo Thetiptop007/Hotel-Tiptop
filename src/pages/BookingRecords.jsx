@@ -127,7 +127,7 @@ export default function BookingRecords() {
         limit: shouldUseServerSearch && searchTerm.trim() ? 300 : 50, // Reduced limits for less server load
         sortBy: sortBy,
         // Only include necessary fields to reduce data transfer
-        fields: 'customerName,customerMobile,customerAadhaar,room,rent,checkIn,checkOut,status,serialNo,entryNo,documents,documentTypes,documentPublicIds,_id,createdAt'
+        fields: 'customerName,customerMobile,customerAadhaar,room,rent,checkIn,checkOut,status,serialNo,entryNo,documents,documentTypes,documentPublicIds,groupSize,additionalGuests,_id,createdAt'
       };
 
       // Add search parameter if we're using server search
@@ -287,6 +287,17 @@ export default function BookingRecords() {
       // Customer name - optimized matching
       const customerName = (booking.customerName || booking.customer?.name || '').toLowerCase();
       if (customerName.includes(searchLower)) return true;
+
+      // Search in additional guest names
+      if (booking.additionalGuests && booking.additionalGuests.length > 0) {
+        for (const guest of booking.additionalGuests) {
+          const guestName = (guest.name || '').toLowerCase();
+          const guestMobile = (guest.mobile || '').toLowerCase();
+          if (guestName.includes(searchLower) || guestMobile.includes(searchLower)) {
+            return true;
+          }
+        }
+      }
 
       // Check individual words for partial matching
       const customerNameWords = customerName.split(/\s+/);
@@ -656,12 +667,25 @@ export default function BookingRecords() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
-                              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold">
+                              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold relative">
                                 {(booking.customerName || booking.customer?.name || 'U').charAt(0)}
+                                {booking.groupSize > 1 && (
+                                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center text-xs font-bold text-white border-2 border-white">
+                                    {booking.groupSize}
+                                  </div>
+                                )}
                               </div>
                               <div className="ml-4">
                                 <div className="text-sm font-medium text-gray-900">{booking.customerName || booking.customer?.name || 'Unknown'}</div>
                                 <div className="text-sm text-gray-500">{booking.customerMobile || booking.customer?.mobile || 'N/A'}</div>
+                                {booking.groupSize > 1 && (
+                                  <div className="text-xs text-green-600 font-medium mt-1 flex items-center">
+                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                    </svg>
+                                    Group of {booking.groupSize}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -987,12 +1011,32 @@ export default function BookingRecords() {
             </div>
             <div className="space-y-4">
               <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold">
+                <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white font-bold relative">
                   {(selectedBooking.customerName || selectedBooking.customer?.name || 'U').charAt(0)}
+                  {selectedBooking.groupSize > 1 && (
+                    <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-xs font-bold text-white border-2 border-white">
+                      {selectedBooking.groupSize}
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <div className="font-semibold text-gray-900">{selectedBooking.customerName || selectedBooking.customer?.name || 'Unknown'}</div>
+                <div className="flex-1">
+                  <div className="flex items-center space-x-2">
+                    <div className="font-semibold text-gray-900">{selectedBooking.customerName || selectedBooking.customer?.name || 'Unknown'}</div>
+                    {selectedBooking.groupSize > 1 && (
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                        Group Leader
+                      </span>
+                    )}
+                  </div>
                   <div className="text-sm text-gray-600">{selectedBooking.customerMobile || selectedBooking.customer?.mobile || 'N/A'}</div>
+                  {selectedBooking.groupSize > 1 && (
+                    <div className="text-sm text-blue-600 font-medium mt-1">
+                      Total Members: {selectedBooking.groupSize} ({selectedBooking.additionalGuests?.length || 0} additional guests)
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1080,6 +1124,109 @@ export default function BookingRecords() {
                       <span className="font-mono font-medium text-gray-900 bg-gray-50 px-2 py-1 rounded">
                         {selectedBooking.customerAadhaar}
                       </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Group Booking Summary */}
+                {selectedBooking.groupSize > 1 && (
+                  <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center mr-3">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="font-semibold text-gray-900">Group Booking</div>
+                          <div className="text-sm text-gray-600">Total {selectedBooking.groupSize} members staying together</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-bold text-green-600">{selectedBooking.groupSize}</div>
+                        <div className="text-xs text-gray-500">Total Members</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
+                      <div className="bg-white/60 rounded-lg p-2 text-center">
+                        <div className="font-medium text-gray-900">1</div>
+                        <div className="text-xs text-gray-600">Primary Guest</div>
+                      </div>
+                      <div className="bg-white/60 rounded-lg p-2 text-center">
+                        <div className="font-medium text-gray-900">{selectedBooking.additionalGuests?.length || 0}</div>
+                        <div className="text-xs text-gray-600">Additional Guests</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Group Members Section */}
+                {selectedBooking.additionalGuests && selectedBooking.additionalGuests.length > 0 && (
+                  <div className="border-t border-gray-200 pt-4">
+                    <div className="text-sm text-gray-600 mb-3 flex items-center">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                      Additional Group Members ({selectedBooking.additionalGuests.length})
+                    </div>
+                    <div className="space-y-3">
+                      {selectedBooking.additionalGuests.map((guest, index) => (
+                        <div key={index} className="bg-white rounded-lg p-3 border border-gray-200">
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-green-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                {guest.name ? guest.name.charAt(0).toUpperCase() : `G${index + 1}`}
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900">{guest.name || 'Guest ' + (index + 1)}</div>
+                                <div className="text-sm text-gray-500">{guest.mobile || 'No mobile provided'}</div>
+                                {guest.aadhaar && (
+                                  <div className="text-xs text-gray-600 font-mono mt-1">{guest.aadhaar}</div>
+                                )}
+
+                                {/* Guest Documents */}
+                                {guest.documents && guest.documents.length > 0 && (
+                                  <div className="mt-3">
+                                    <div className="text-xs text-gray-600 mb-2 flex items-center">
+                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                      </svg>
+                                      Documents ({guest.documents.length})
+                                    </div>
+                                    <div className="flex space-x-2">
+                                      {guest.documents.map((docUrl, docIndex) => {
+                                        const docType = guest.documentTypes ? guest.documentTypes[docIndex] : 'document';
+                                        const isAadhaarFront = docType === 'aadhaar-front';
+                                        const isAadhaarBack = docType === 'aadhaar-back';
+
+                                        return (
+                                          <a
+                                            key={docIndex}
+                                            href={docUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors duration-200"
+                                          >
+                                            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                            </svg>
+                                            {isAadhaarFront ? 'Front' : isAadhaarBack ? 'Back' : `Doc ${docIndex + 1}`}
+                                          </a>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {guest.relationship || 'Guest'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
