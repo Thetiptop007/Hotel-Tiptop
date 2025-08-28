@@ -35,6 +35,7 @@ export default function AddBooking() {
     customerName: '',
     customerMobile: '',
     customerAadhaar: '',
+    entryNo: '',
     rent: '',
     room: '',
     checkIn: getCurrentLocalDate(), // Today's date in local timezone
@@ -211,6 +212,24 @@ export default function AddBooking() {
         throw new Error('Mobile number cannot have all same digits');
       }
 
+      // Validate entry number
+      if (!formData.entryNo.trim()) {
+        throw new Error('Entry number is required');
+      }
+
+      if (formData.entryNo.trim().length < 2) {
+        throw new Error('Entry number must be at least 2 characters long');
+      }
+
+      if (formData.entryNo.trim().length > 20) {
+        throw new Error('Entry number cannot exceed 20 characters');
+      }
+
+      // Check for valid entry number format (alphanumeric with optional dash/underscore)
+      if (!/^[a-zA-Z0-9_-]+$/.test(formData.entryNo.trim())) {
+        throw new Error('Entry number can only contain letters, numbers, hyphens, and underscores');
+      }
+
       let documentUrls = [];
       let documentPublicIds = [];
       let documentTypes = [];
@@ -380,6 +399,7 @@ export default function AddBooking() {
         customerName: formData.customerName,
         customerMobile: formData.customerMobile,
         customerAadhaar: formattedAadhaar,
+        entryNo: formData.entryNo.trim(),
         rent: parseFloat(formData.rent),
         room: formData.room || 'TBD',
         checkIn: formData.checkIn,
@@ -400,6 +420,7 @@ export default function AddBooking() {
           customerName: '',
           customerMobile: '',
           customerAadhaar: '',
+          entryNo: '',
           rent: '',
           room: '',
           checkIn: getCurrentLocalDate(),
@@ -944,6 +965,34 @@ export default function AddBooking() {
                     </svg>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Row 2.5 - Entry Number */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Entry Number
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    name="entryNo"
+                    value={formData.entryNo}
+                    onChange={handleInputChange}
+                    placeholder="Enter entry number (e.g., E001, E123)"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                    required
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-4">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {/* Empty space to maintain grid layout */}
               </div>
             </div>
 
