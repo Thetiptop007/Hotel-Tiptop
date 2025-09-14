@@ -373,27 +373,21 @@ export default function BookingRecords() {
       const response = await bookingAPI.deleteBooking(deletingBooking._id);
 
       if (response.success) {
-        // Remove the booking from the local state instead of full refresh
-        setBookings(prevBookings => prevBookings.filter(b => b._id !== deletingBooking._id));
-        setTotalCount(prevCount => prevCount - 1);
-
-        // Close the modal
+        // Close the modal first
         setShowDeleteModal(false);
         setDeletingBooking(null);
-
-        // Show success message (you can replace this with a toast notification)
-        const customerName = deletingBooking.customerName || deletingBooking.customer?.name || 'Customer';
-        alert(`Booking for ${customerName} has been deleted successfully.`);
+        
+        // Refresh the bookings list from server to ensure UI is in sync with database
+        await fetchBookings(false, false, true); // forceRefresh = true
       } else {
-        alert('Failed to delete booking record');
+        console.error('Failed to delete booking record');
       }
     } catch (error) {
       console.error('Error deleting booking:', error);
-      alert('Error deleting booking record: ' + error.message);
     } finally {
       setIsDeleting(false);
     }
-  }, [deletingBooking]);
+  }, [deletingBooking, fetchBookings]);
 
   const handleCheckout = useCallback(async (booking) => {
     setCheckingOutBooking(booking._id);

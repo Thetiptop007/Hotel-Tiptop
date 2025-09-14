@@ -31,6 +31,9 @@ export default function AddBooking() {
   const [additionalGuests, setAdditionalGuests] = useState([]);
   const [showGroupBooking, setShowGroupBooking] = useState(false);
 
+  // Auto-fill indicator
+  const [isAutoFilled, setIsAutoFilled] = useState(false);
+
   const [formData, setFormData] = useState({
     customerName: '',
     customerMobile: '',
@@ -234,6 +237,19 @@ export default function AddBooking() {
       let documentPublicIds = [];
       let documentTypes = [];
 
+      // Include auto-filled documents from previous visits
+      if (uploadedDocuments.front && uploadedDocuments.front.isFromPreviousVisit) {
+        documentUrls.push(uploadedDocuments.front.url);
+        documentPublicIds.push(uploadedDocuments.front.publicId || ''); // May be null for auto-filled docs
+        documentTypes.push('aadhaar-front');
+      }
+
+      if (uploadedDocuments.back && uploadedDocuments.back.isFromPreviousVisit) {
+        documentUrls.push(uploadedDocuments.back.url);
+        documentPublicIds.push(uploadedDocuments.back.publicId || ''); // May be null for auto-filled docs
+        documentTypes.push('aadhaar-back');
+      }
+
       // Upload front side document to Cloudinary if provided
       if (formData.aadhaarFront) {
         setIsUploadingFront(true);
@@ -357,7 +373,7 @@ export default function AddBooking() {
             documentTypes: []
           };
 
-          // Upload guest's front document if provided
+          // Handle guest's front document - either upload new file or use auto-filled URL
           if (guest.aadhaarFront) {
             try {
               const uploadResult = await cloudinaryService.uploadImage(
@@ -372,9 +388,14 @@ export default function AddBooking() {
             } catch (err) {
               console.warn(`Failed to upload guest ${i + 1} front document:`, err);
             }
+          } else if (guest.aadhaarFrontUrl && guest.aadhaarFrontPreview) {
+            // Use auto-filled document from previous visit
+            processedGuest.documents.push(guest.aadhaarFrontUrl);
+            processedGuest.documentPublicIds.push(''); // No public ID for existing documents
+            processedGuest.documentTypes.push('aadhaar-front');
           }
 
-          // Upload guest's back document if provided
+          // Handle guest's back document - either upload new file or use auto-filled URL
           if (guest.aadhaarBack) {
             try {
               const uploadResult = await cloudinaryService.uploadImage(
@@ -389,6 +410,11 @@ export default function AddBooking() {
             } catch (err) {
               console.warn(`Failed to upload guest ${i + 1} back document:`, err);
             }
+          } else if (guest.aadhaarBackUrl && guest.aadhaarBackPreview) {
+            // Use auto-filled document from previous visit
+            processedGuest.documents.push(guest.aadhaarBackUrl);
+            processedGuest.documentPublicIds.push(''); // No public ID for existing documents
+            processedGuest.documentTypes.push('aadhaar-back');
           }
 
           processedAdditionalGuests.push(processedGuest);
@@ -444,6 +470,115 @@ export default function AddBooking() {
     }
   }, [formData, additionalGuests]);
 
+  // Auto-fill customer data when Aadhaar or mobile is complete
+  const autoFillCustomerData = useCallback(async (mobileNumber = null, aadhaarNumber = null) => {
+    if (!mobileNumber && !aadhaarNumber) return;
+    if (aadhaarNumber && aadhaarNumber.length !== 14) return;
+    if (mobileNumber && mobileNumber.length !== 10) return;
+
+    try {
+      const response = await bookingAPI.searchCustomer(mobileNumber, aadhaarNumber);
+
+      if (response.success && response.data.found) {
+        const customer = response.data.customer;
+
+        // Only auto-fill if the fields are empty to avoid overwriting user input
+        setFormData(prev => ({
+          ...prev,
+          customerName: prev.customerName === '' ? customer.name : prev.customerName,
+          customerMobile: prev.customerMobile === '' ? customer.mobile : prev.customerMobile,
+          customerAadhaar: prev.customerAadhaar === '' ? customer.aadhaar : prev.customerAadhaar
+        }));
+
+        // Auto-fill Aadhaar document images if available and not already uploaded
+        if (!uploadedDocuments.front && customer.aadhaarFrontUrl) {
+          setUploadedDocuments(prev => ({
+            ...prev,
+            front: {
+              url: customer.aadhaarFrontUrl,
+              publicId: null, // We don't have the publicId from search, but that's okay for display
+              isFromPreviousVisit: true
+            }
+          }));
+        }
+
+        if (!uploadedDocuments.back && customer.aadhaarBackUrl) {
+          setUploadedDocuments(prev => ({
+            ...prev,
+            back: {
+              url: customer.aadhaarBackUrl,
+              publicId: null,
+              isFromPreviousVisit: true
+            }
+          }));
+        }
+
+        // Show a detailed success message
+        const documentsFound = (customer.aadhaarFrontUrl ? 1 : 0) + (customer.aadhaarBackUrl ? 1 : 0);
+        const documentMsg = documentsFound > 0 ? ` & ${documentsFound} document${documentsFound > 1 ? 's' : ''}` : '';
+        setSuccessMessage(`Customer found: ${customer.name} (${customer.visitCount || customer.totalBookings} previous visits) - Details${documentMsg} auto-filled`);
+
+        // Store customer history for potential display
+        setCustomerHistory(customer);
+
+        // Set auto-fill indicator
+        setIsAutoFilled(true);
+
+        // Clear auto-fill indicator after 3 seconds
+        setTimeout(() => setIsAutoFilled(false), 3000);
+      }
+    } catch (error) {
+      // Silently fail for auto-fill - user can still manually check history
+      console.log('Auto-fill customer lookup failed:', error);
+    }
+  }, [uploadedDocuments]);
+
+  // Auto-fill guest data when Aadhaar is complete
+  const autoFillGuestData = useCallback(async (guestId, aadhaarNumber) => {
+    if (!aadhaarNumber || aadhaarNumber.length !== 14) return;
+
+    try {
+      const response = await bookingAPI.searchCustomer(null, aadhaarNumber);
+
+      if (response.success && response.data.found) {
+        const customer = response.data.customer;
+
+        // Update the specific guest with found data (only if fields are empty)
+        setAdditionalGuests(prev =>
+          prev.map(guest => {
+            if (guest.id === guestId) {
+              const updatedGuest = {
+                ...guest,
+                name: guest.name === '' ? customer.name : guest.name,
+                mobile: guest.mobile === '' ? customer.mobile : guest.mobile
+              };
+
+              // Handle document URLs by creating virtual file objects for preview
+              if (customer.aadhaarFrontUrl && !guest.aadhaarFront) {
+                updatedGuest.aadhaarFrontUrl = customer.aadhaarFrontUrl;
+                updatedGuest.aadhaarFrontPreview = true;
+              }
+
+              if (customer.aadhaarBackUrl && !guest.aadhaarBack) {
+                updatedGuest.aadhaarBackUrl = customer.aadhaarBackUrl;
+                updatedGuest.aadhaarBackPreview = true;
+              }
+
+              return updatedGuest;
+            }
+            return guest;
+          })
+        );
+
+        // Show success message for this specific guest
+        setSuccessMessage(`Guest data found: ${customer.name} (${customer.visitCount} previous visits)`);
+      }
+    } catch (error) {
+      // Silently fail for auto-fill
+      console.log('Auto-fill guest lookup failed:', error);
+    }
+  }, []);
+
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
 
@@ -488,6 +623,11 @@ export default function AddBooking() {
         ...prev,
         [name]: limited
       }));
+
+      // Auto-fill customer data when mobile number is complete (10 digits)
+      if (limited.length === 10 && ['6', '7', '8', '9'].includes(limited.charAt(0))) {
+        autoFillCustomerData(limited, null);
+      }
     }
     // Format Aadhaar number as user types
     else if (name === 'customerAadhaar') {
@@ -508,6 +648,11 @@ export default function AddBooking() {
         ...prev,
         [name]: formatted
       }));
+
+      // Auto-fill customer data when Aadhaar is complete (12 digits = 14 chars with dashes)
+      if (formatted.length === 14 && limited.length === 12) {
+        autoFillCustomerData(null, formatted);
+      }
     } else {
       setFormData(prev => ({
         ...prev,
@@ -517,7 +662,7 @@ export default function AddBooking() {
     // Clear messages when user types (except for mobile validation errors)
     if (error && name !== 'customerMobile') setError("");
     if (successMessage) setSuccessMessage("");
-  }, [error, successMessage]);
+  }, [error, successMessage, autoFillCustomerData]);
 
   const handleFileChange = useCallback((e, side) => {
     const file = e.target.files[0];
@@ -690,6 +835,30 @@ export default function AddBooking() {
             : guest
         )
       );
+    } else if (field === 'aadhaar') {
+      // Format Aadhaar number as user types for guests
+      const numbers = value.replace(/\D/g, '');
+      const limited = numbers.slice(0, 12);
+      let formatted = limited;
+      if (limited.length > 4) {
+        formatted = limited.slice(0, 4) + '-' + limited.slice(4);
+      }
+      if (limited.length > 8) {
+        formatted = limited.slice(0, 4) + '-' + limited.slice(4, 8) + '-' + limited.slice(8);
+      }
+
+      setAdditionalGuests(prev =>
+        prev.map(guest =>
+          guest.id === guestId
+            ? { ...guest, [field]: formatted }
+            : guest
+        )
+      );
+
+      // Auto-fill guest data when Aadhaar is complete (12 digits = 14 chars with dashes)
+      if (formatted.length === 14 && limited.length === 12) {
+        autoFillGuestData(guestId, formatted);
+      }
     } else {
       setAdditionalGuests(prev =>
         prev.map(guest =>
@@ -699,7 +868,7 @@ export default function AddBooking() {
         )
       );
     }
-  }, []);
+  }, [autoFillGuestData]);
 
   const handleGuestFileChange = useCallback((guestId, side, file) => {
     updateAdditionalGuest(guestId, side === 'front' ? 'aadhaarFront' : 'aadhaarBack', file);
@@ -783,7 +952,86 @@ export default function AddBooking() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Row 1 - Name & Mobile */}
+            {/* Row 1 - Entry Number & Aadhaar Number */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Entry Number
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    name="entryNo"
+                    value={formData.entryNo}
+                    onChange={handleInputChange}
+                    placeholder="Enter entry number (e.g., E001, E123)"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                    required
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-4">
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Aadhaar Number with Check History Button */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Aadhaar Number
+                </label>
+                <div className="flex gap-3 items-center">
+                  <div className="relative flex-[3]">
+                    <input
+                      type="text"
+                      name="customerAadhaar"
+                      value={formData.customerAadhaar}
+                      onChange={handleInputChange}
+                      placeholder="XXXX-XXXX-XXXX"
+                      className={`w-full px-4 py-3 rounded-xl border focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 ${isAutoFilled && formData.customerAadhaar
+                        ? 'border-green-300 bg-green-50/50 shadow-sm'
+                        : 'border-gray-200 bg-white/50'
+                        }`}
+                      required
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-4">
+                      <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+                      </svg>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCheckCustomerHistory}
+                    disabled={isChecking || !formData.customerAadhaar || formData.customerAadhaar.length < 14}
+                    className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-4 focus:ring-green-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm whitespace-nowrap h-full"
+                  >
+                    {isChecking ? (
+                      <div className="flex items-center justify-center">
+                        <svg className="animate-spin -ml-1 mr-1 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span className="hidden sm:inline">Checking</span>
+                        <span className="sm:hidden">...</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center">
+                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                        </svg>
+                        <span className="hidden lg:inline">Check History</span>
+                        <span className="lg:hidden hidden sm:inline">Check</span>
+                        <span className="sm:hidden">✓</span>
+                      </div>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Row 2 - Customer Name & Mobile Number */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700">
@@ -796,7 +1044,10 @@ export default function AddBooking() {
                     value={formData.customerName}
                     onChange={handleInputChange}
                     placeholder="Enter full name"
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                    className={`w-full px-4 py-3 rounded-xl border focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 ${isAutoFilled && formData.customerName
+                      ? 'border-green-300 bg-green-50/50 shadow-sm'
+                      : 'border-gray-200 bg-white/50'
+                      }`}
                     required
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center pr-4">
@@ -921,7 +1172,7 @@ export default function AddBooking() {
               </div>
             )}
 
-            {/* Row 2 - Rent & Room Number */}
+            {/* Row 3 - Rent & Room Number */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700">
@@ -968,88 +1219,8 @@ export default function AddBooking() {
               </div>
             </div>
 
-            {/* Row 2.5 - Entry Number */}
+            {/* Row 4 - Check-in Date */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Entry Number
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    name="entryNo"
-                    value={formData.entryNo}
-                    onChange={handleInputChange}
-                    placeholder="Enter entry number (e.g., E001, E123)"
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
-                    required
-                  />
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-4">
-                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {/* Empty space to maintain grid layout */}
-              </div>
-            </div>
-
-            {/* Row 3 - Aadhaar Number & Check-in Date */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Aadhaar Number with Check History Button */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Aadhaar Number
-                </label>
-                <div className="flex gap-3 items-center">
-                  <div className="relative flex-[3]">
-                    <input
-                      type="text"
-                      name="customerAadhaar"
-                      value={formData.customerAadhaar}
-                      onChange={handleInputChange}
-                      placeholder="XXXX-XXXX-XXXX"
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
-                      required
-                    />
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-4">
-                      <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
-                      </svg>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCheckCustomerHistory}
-                    disabled={isChecking || !formData.customerAadhaar || formData.customerAadhaar.length < 14}
-                    className="flex-1 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-xl font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-4 focus:ring-green-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm whitespace-nowrap h-full"
-                  >
-                    {isChecking ? (
-                      <div className="flex items-center justify-center">
-                        <svg className="animate-spin -ml-1 mr-1 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span className="hidden sm:inline">Checking</span>
-                        <span className="sm:hidden">...</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center">
-                        <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-                        </svg>
-                        <span className="hidden lg:inline">Check History</span>
-                        <span className="lg:hidden hidden sm:inline">Check</span>
-                        <span className="sm:hidden">✓</span>
-                      </div>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Check-in Date */}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700">
                   Check-in Date
@@ -1065,9 +1236,12 @@ export default function AddBooking() {
                   />
                 </div>
               </div>
+              <div className="space-y-2">
+                {/* Empty space to maintain grid layout */}
+              </div>
             </div>
 
-            {/* Row 4 - Aadhaar Document Upload Section */}
+            {/* Row 5 - Aadhaar Document Upload Section */}
             <div className="space-y-4">
               <label className="text-sm font-medium text-gray-700">
                 📎 Upload Aadhaar Documents (Optional)
@@ -1105,6 +1279,34 @@ export default function AddBooking() {
                         >
                           ×
                         </button>
+                      </div>
+                    )}
+
+                    {/* Show uploaded document from previous visit */}
+                    {!formData.aadhaarFront && uploadedDocuments.front && (
+                      <div className="mt-2 p-3 bg-green-50 rounded border border-green-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center">
+                            <span className="text-green-600 mr-2">📋</span>
+                            <span className="text-sm text-green-700 font-medium">
+                              {uploadedDocuments.front.isFromPreviousVisit ? 'From Previous Visit' : 'Previously Uploaded'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setUploadedDocuments(prev => ({ ...prev, front: null }))}
+                            className="text-red-500 hover:text-red-700 text-lg"
+                            title="Remove auto-filled document"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <img
+                          src={uploadedDocuments.front.url}
+                          alt="Aadhaar Front"
+                          className="w-full max-w-xs h-auto rounded border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => window.open(uploadedDocuments.front.url, '_blank')}
+                        />
                       </div>
                     )}
 
@@ -1147,6 +1349,34 @@ export default function AddBooking() {
                         >
                           ×
                         </button>
+                      </div>
+                    )}
+
+                    {/* Show uploaded back document from previous visit */}
+                    {!formData.aadhaarBack && uploadedDocuments.back && (
+                      <div className="mt-2 p-3 bg-green-50 rounded border border-green-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center">
+                            <span className="text-green-600 mr-2">📋</span>
+                            <span className="text-sm text-green-700 font-medium">
+                              {uploadedDocuments.back.isFromPreviousVisit ? 'From Previous Visit' : 'Previously Uploaded'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setUploadedDocuments(prev => ({ ...prev, back: null }))}
+                            className="text-red-500 hover:text-red-700 text-lg"
+                            title="Remove auto-filled document"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <img
+                          src={uploadedDocuments.back.url}
+                          alt="Aadhaar Back"
+                          className="w-full max-w-xs h-auto rounded border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => window.open(uploadedDocuments.back.url, '_blank')}
+                        />
                       </div>
                     )}
 
@@ -1197,6 +1427,26 @@ export default function AddBooking() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    {/* Guest Aadhaar - First Priority */}
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Aadhaar Number *
+                      </label>
+                      <input
+                        type="text"
+                        value={guest.aadhaar}
+                        onChange={(e) => updateAdditionalGuest(guest.id, 'aadhaar', e.target.value)}
+                        placeholder="XXXX-XXXX-XXXX"
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                        required
+                      />
+                      <div className="absolute inset-y-0 right-0 top-8 flex items-center pr-4">
+                        <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                    </div>
+
                     {/* Guest Name */}
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1210,8 +1460,15 @@ export default function AddBooking() {
                         className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
                         required
                       />
+                      <div className="absolute inset-y-0 right-0 top-8 flex items-center pr-4">
+                        <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      </div>
                     </div>
+                  </div>
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     {/* Guest Mobile */}
                     <div className="relative">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1252,28 +1509,6 @@ export default function AddBooking() {
                         <p className="text-xs text-red-500 mt-1">Mobile number must start with 6, 7, 8, or 9</p>
                       )}
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    {/* Guest Aadhaar */}
-                    <div className="relative">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Aadhaar Number
-                      </label>
-                      <input
-                        type="text"
-                        value={guest.aadhaar}
-                        onChange={(e) => {
-                          const numbers = e.target.value.replace(/\D/g, '');
-                          const formatted = numbers.length <= 12
-                            ? numbers.replace(/(\d{4})(\d{4})(\d{4})/, '$1-$2-$3').replace(/-+$/, '')
-                            : guest.aadhaar;
-                          updateAdditionalGuest(guest.id, 'aadhaar', formatted);
-                        }}
-                        placeholder="XXXX-XXXX-XXXX"
-                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
-                      />
-                    </div>
 
                     {/* Relationship */}
                     <div className="relative">
@@ -1292,6 +1527,11 @@ export default function AddBooking() {
                         <option value="Business Partner">Business Partner</option>
                         <option value="Other">Other</option>
                       </select>
+                      <div className="absolute inset-y-0 right-0 top-8 flex items-center pr-4">
+                        <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
 
@@ -1327,6 +1567,36 @@ export default function AddBooking() {
                             </button>
                           </div>
                         )}
+
+                        {/* Auto-filled document preview for front side */}
+                        {guest.aadhaarFrontUrl && guest.aadhaarFrontPreview && !guest.aadhaarFront && (
+                          <div className="mt-2">
+                            <div className="p-2 bg-blue-50 rounded border border-blue-200 flex items-center justify-between">
+                              <div className="flex items-center">
+                                <span className="text-blue-600 mr-2">🔄</span>
+                                <span className="text-sm text-blue-700 font-medium">Auto-filled from previous visit</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setAdditionalGuests(prev =>
+                                  prev.map(g => g.id === guest.id ?
+                                    { ...g, aadhaarFrontUrl: null, aadhaarFrontPreview: false } : g
+                                  )
+                                )}
+                                className="text-red-500 hover:text-red-700 text-lg"
+                                title="Remove auto-filled document"
+                              >
+                                ×
+                              </button>
+                            </div>
+                            <img
+                              src={guest.aadhaarFrontUrl}
+                              alt="Aadhaar Front (Auto-filled)"
+                              className="w-full max-w-xs h-auto rounded border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity mt-2"
+                              onClick={() => window.open(guest.aadhaarFrontUrl, '_blank')}
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1358,6 +1628,36 @@ export default function AddBooking() {
                             >
                               ×
                             </button>
+                          </div>
+                        )}
+
+                        {/* Auto-filled document preview for back side */}
+                        {guest.aadhaarBackUrl && guest.aadhaarBackPreview && !guest.aadhaarBack && (
+                          <div className="mt-2">
+                            <div className="p-2 bg-green-50 rounded border border-green-200 flex items-center justify-between">
+                              <div className="flex items-center">
+                                <span className="text-green-600 mr-2">🔄</span>
+                                <span className="text-sm text-green-700 font-medium">Auto-filled from previous visit</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setAdditionalGuests(prev =>
+                                  prev.map(g => g.id === guest.id ?
+                                    { ...g, aadhaarBackUrl: null, aadhaarBackPreview: false } : g
+                                  )
+                                )}
+                                className="text-red-500 hover:text-red-700 text-lg"
+                                title="Remove auto-filled document"
+                              >
+                                ×
+                              </button>
+                            </div>
+                            <img
+                              src={guest.aadhaarBackUrl}
+                              alt="Aadhaar Back (Auto-filled)"
+                              className="w-full max-w-xs h-auto rounded border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity mt-2"
+                              onClick={() => window.open(guest.aadhaarBackUrl, '_blank')}
+                            />
                           </div>
                         )}
                       </div>
