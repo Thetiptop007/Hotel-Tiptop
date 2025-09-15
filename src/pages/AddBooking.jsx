@@ -516,7 +516,8 @@ export default function AddBooking() {
         // Show a detailed success message
         const documentsFound = (customer.aadhaarFrontUrl ? 1 : 0) + (customer.aadhaarBackUrl ? 1 : 0);
         const documentMsg = documentsFound > 0 ? ` & ${documentsFound} document${documentsFound > 1 ? 's' : ''}` : '';
-        setSuccessMessage(`Customer found: ${customer.name} (${customer.visitCount || customer.totalBookings} previous visits) - Details${documentMsg} auto-filled`);
+        const roleMsg = customer.isGuest ? ' (previously visited as guest)' : '';
+        setSuccessMessage(`Customer found: ${customer.name} (${customer.visitCount || customer.totalBookings} previous visits${roleMsg}) - Details${documentMsg} auto-filled`);
 
         // Store customer history for potential display
         setCustomerHistory(customer);
@@ -571,7 +572,8 @@ export default function AddBooking() {
         );
 
         // Show success message for this specific guest
-        setSuccessMessage(`Guest data found: ${customer.name} (${customer.visitCount} previous visits)`);
+        const roleMsg = customer.isGuest ? ' (previously was guest)' : ' (previously was main customer)';
+        setSuccessMessage(`Guest data found: ${customer.name} (${customer.visitCount} previous visits${roleMsg})`);
       }
     } catch (error) {
       // Silently fail for auto-fill
