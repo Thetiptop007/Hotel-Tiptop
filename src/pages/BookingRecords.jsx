@@ -904,41 +904,71 @@ export default function BookingRecords() {
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">Check-out Date</label>
                   {!editFormData.checkOut || editFormData.status === 'checked-in' ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const today = getCurrentLocalDate();
-                        setEditFormData(prev => ({
-                          ...prev,
-                          checkOut: today,
-                          status: 'checked-out'
-                        }));
-                      }}
-                      className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-3 px-4 rounded-xl font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-4 focus:ring-green-500/30 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
-                      <span>Checkout Today</span>
-                    </button>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-700 font-medium">
-                        Checked out: {new Date(editFormData.checkOut).toLocaleDateString()}
-                      </div>
+                    <div className="space-y-3">
+                      {/* Date picker for checkout */}
+                      <input
+                        type="date"
+                        value={editFormData.checkOut || ''}
+                        onChange={(e) => setEditFormData(prev => ({ 
+                          ...prev, 
+                          checkOut: e.target.value,
+                          status: e.target.value ? 'checked-out' : 'checked-in'
+                        }))}
+                        min={editFormData.checkIn || ''} // Can't checkout before checkin
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                        placeholder="Select checkout date"
+                      />
+                      {/* Quick checkout today button */}
                       <button
                         type="button"
                         onClick={() => {
+                          const today = getCurrentLocalDate();
                           setEditFormData(prev => ({
                             ...prev,
-                            checkOut: '',
-                            status: 'checked-in'
+                            checkOut: today,
+                            status: 'checked-out'
                           }));
                         }}
-                        className="text-sm text-blue-600 hover:text-blue-500 font-medium"
+                        className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-4 focus:ring-green-500/30 transition-all duration-300 flex items-center justify-center space-x-2"
                       >
-                        Clear checkout & mark as checked-in
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        <span>Quick Checkout Today</span>
                       </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* Editable checkout date when already checked out */}
+                      <input
+                        type="date"
+                        value={editFormData.checkOut}
+                        onChange={(e) => setEditFormData(prev => ({ 
+                          ...prev, 
+                          checkOut: e.target.value,
+                          status: e.target.value ? 'checked-out' : 'checked-in'
+                        }))}
+                        min={editFormData.checkIn || ''} // Can't checkout before checkin
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
+                      />
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">
+                          Status: <span className="font-medium text-green-600">Checked out</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditFormData(prev => ({
+                              ...prev,
+                              checkOut: '',
+                              status: 'checked-in'
+                            }));
+                          }}
+                          className="text-sm text-blue-600 hover:text-blue-500 font-medium hover:underline transition-colors"
+                        >
+                          Clear & mark as checked-in
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
