@@ -376,7 +376,7 @@ export default function BookingRecords() {
         // Close the modal first
         setShowDeleteModal(false);
         setDeletingBooking(null);
-        
+
         // Refresh the bookings list from server to ensure UI is in sync with database
         await fetchBookings(false, false, true); // forceRefresh = true
       } else {
@@ -909,8 +909,8 @@ export default function BookingRecords() {
                       <input
                         type="date"
                         value={editFormData.checkOut || ''}
-                        onChange={(e) => setEditFormData(prev => ({ 
-                          ...prev, 
+                        onChange={(e) => setEditFormData(prev => ({
+                          ...prev,
                           checkOut: e.target.value,
                           status: e.target.value ? 'checked-out' : 'checked-in'
                         }))}
@@ -943,8 +943,8 @@ export default function BookingRecords() {
                       <input
                         type="date"
                         value={editFormData.checkOut}
-                        onChange={(e) => setEditFormData(prev => ({ 
-                          ...prev, 
+                        onChange={(e) => setEditFormData(prev => ({
+                          ...prev,
                           checkOut: e.target.value,
                           status: e.target.value ? 'checked-out' : 'checked-in'
                         }))}
