@@ -974,7 +974,7 @@ export default function BookingRecords() {
                 </div>
               </div>
 
-              {/* Row 4 - Rent & Status */}
+              {/* Row 4 - Rent */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">Room Rent</label>
@@ -985,17 +985,7 @@ export default function BookingRecords() {
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Status</label>
-                  <select
-                    value={editFormData.status}
-                    onChange={(e) => setEditFormData(prev => ({ ...prev, status: e.target.value }))}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all duration-300 bg-white/50"
-                  >
-                    <option value="checked-in">Checked In</option>
-                    <option value="checked-out">Checked Out</option>
-                  </select>
-                </div>
+                <div></div> {/* Empty div to maintain grid layout */}
               </div>
 
               {/* Action Buttons */}
