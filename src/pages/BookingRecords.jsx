@@ -124,7 +124,7 @@ export default function BookingRecords() {
       // Build query parameters with minimal data transfer
       const params = {
         page: shouldUseServerSearch && searchTerm.trim() ? 1 : currentPage,
-        limit: shouldUseServerSearch && searchTerm.trim() ? 300 : 50, // Reduced limits for less server load
+        limit: shouldUseServerSearch && searchTerm.trim() ? 300 : itemsPerPage, // Use itemsPerPage for consistent pagination
         sortBy: sortBy,
         // Only include necessary fields to reduce data transfer
         fields: 'customerName,customerMobile,customerAadhaar,room,rent,checkIn,checkOut,status,serialNo,entryNo,documents,documentTypes,documentPublicIds,groupSize,additionalGuests,_id,createdAt'
@@ -152,7 +152,7 @@ export default function BookingRecords() {
 
       if (response.success) {
         const newBookings = response.data.bookings || [];
-        const newTotalCount = response.data.totalCount || response.data.pagination?.total || 0;
+        const newTotalCount = response.data.pagination?.totalCount || response.data.totalCount || 0;
 
         setBookings(newBookings);
         setTotalCount(newTotalCount);
@@ -214,10 +214,7 @@ export default function BookingRecords() {
     if (!searchTerm.trim()) {
       setIsSearching(false);
 
-      // Reset to first page if needed
-      if (currentPage !== 1) {
-        setCurrentPage(1);
-      }
+      // No need to reset page when clearing search - let user stay on their current page
 
       // Only reload if we don't have recent data (avoid unnecessary calls)
       const timeout = setTimeout(() => {
@@ -237,10 +234,8 @@ export default function BookingRecords() {
 
     // Debounced search with optimal delay (1.2 seconds like Flipkart)
     const timeout = setTimeout(() => {
-      // Reset to first page for new search
-      if (currentPage !== 1) {
-        setCurrentPage(1);
-      }
+      // Reset to first page for new search (only when starting a search)
+      setCurrentPage(1);
 
       // Choose optimal search strategy
       if (totalCount <= 500 && allBookingsLoaded && !useServerSearch) {
@@ -258,14 +253,16 @@ export default function BookingRecords() {
         clearTimeout(timeout);
       }
     };
-  }, [searchTerm, isAuthenticated, fetchBookings, totalCount, allBookingsLoaded, useServerSearch, currentPage, dataLoadedAt]);  // Separate effect for pagination (only when not searching)
+  }, [searchTerm, isAuthenticated, fetchBookings, totalCount, allBookingsLoaded, useServerSearch, dataLoadedAt]);  // Separate effect for pagination (only when not searching)
   useEffect(() => {
-    if (!isAuthenticated || currentPage === 1 || searchTerm.trim()) return;
+    if (!isAuthenticated || searchTerm.trim()) return;
+
+    // Always fetch when page changes, including page 1
     fetchBookings(false);
   }, [currentPage, isAuthenticated, fetchBookings, searchTerm]);
 
   // Memoized calculations
-  const itemsPerPage = 100; // Increased for admin interface
+  const itemsPerPage = 20; // Set to 20 bookings per page as requested
   const totalPages = useMemo(() => Math.ceil(totalCount / itemsPerPage), [totalCount]);
 
   // Memoized filtered bookings with intelligent search strategy
@@ -772,8 +769,8 @@ export default function BookingRecords() {
                   </table>
                 </div>
 
-                {/* Pagination - Only show if we have more than 100 records and no search */}
-                {!searchTerm && totalCount > 100 && (
+                {/* Pagination - Only show if we have more than 20 records and no search */}
+                {(!searchTerm || searchTerm.trim() === '') && totalCount > itemsPerPage && (
                   <div className="bg-white/50 px-6 py-4 border-t border-gray-200/50 flex-shrink-0">
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-gray-600">
@@ -788,35 +785,80 @@ export default function BookingRecords() {
                           Previous
                         </button>
 
-                        {/* Show page numbers only if reasonable number of pages */}
-                        {totalPages <= 10 ? (
-                          [...Array(totalPages)].map((_, i) => (
+                        {/* Professional pagination with max 3 visible page numbers */}
+                        {(() => {
+                          const renderPageButton = (pageNum, isActive = false) => (
                             <button
-                              key={i + 1}
-                              onClick={() => setCurrentPage(i + 1)}
-                              className={`px-3 py-2 rounded-lg border transition-colors duration-200 ${currentPage === i + 1
+                              key={pageNum}
+                              onClick={() => setCurrentPage(pageNum)}
+                              className={`px-3 py-2 rounded-lg border transition-colors duration-200 ${isActive
                                 ? 'bg-blue-500 text-white border-blue-500'
                                 : 'border-gray-300 text-gray-600 hover:bg-gray-50'
                                 }`}
                             >
-                              {i + 1}
+                              {pageNum}
                             </button>
-                          ))
-                        ) : (
-                          <div className="flex items-center space-x-2">
-                            <span className="text-sm text-gray-600">
-                              Page {currentPage} of {totalPages}
-                            </span>
-                          </div>
-                        )}
+                          );
 
-                        <button
+                          const renderEllipsis = (key) => (
+                            <span key={key} className="px-2 text-gray-500">...</span>
+                          );
+
+                          if (totalPages <= 5) {
+                            // Show all pages if 5 or less
+                            return [...Array(totalPages)].map((_, i) =>
+                              renderPageButton(i + 1, currentPage === i + 1)
+                            );
+                          }
+
+                          const pages = [];
+
+                          // Always show first page
+                          pages.push(renderPageButton(1, currentPage === 1));
+
+                          if (currentPage <= 3) {
+                            // Near the beginning: 1, 2, 3, ..., last
+                            pages.push(renderPageButton(2, currentPage === 2));
+                            pages.push(renderPageButton(3, currentPage === 3));
+                            if (totalPages > 4) {
+                              pages.push(renderEllipsis('start-ellipsis'));
+                            }
+                          } else if (currentPage >= totalPages - 2) {
+                            // Near the end: 1, ..., n-2, n-1, n
+                            if (totalPages > 4) {
+                              pages.push(renderEllipsis('end-ellipsis'));
+                            }
+                            pages.push(renderPageButton(totalPages - 2, currentPage === totalPages - 2));
+                            pages.push(renderPageButton(totalPages - 1, currentPage === totalPages - 1));
+                          } else {
+                            // In the middle: 1, ..., current-1, current, current+1, ..., last
+                            pages.push(renderEllipsis('start-ellipsis'));
+                            pages.push(renderPageButton(currentPage - 1, false));
+                            pages.push(renderPageButton(currentPage, true));
+                            pages.push(renderPageButton(currentPage + 1, false));
+                            pages.push(renderEllipsis('end-ellipsis'));
+                          }
+
+                          // Always show last page if more than 1 page
+                          if (totalPages > 1) {
+                            pages.push(renderPageButton(totalPages, currentPage === totalPages));
+                          }
+
+                          return pages;
+                        })()}                        <button
                           onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                           disabled={currentPage === totalPages}
                           className="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
                         >
                           Next
                         </button>
+
+                        {/* Page info */}
+                        <div className="flex items-center ml-4">
+                          <span className="text-sm text-gray-600">
+                            Page {currentPage} of {totalPages}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
